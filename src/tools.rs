@@ -4,6 +4,7 @@ use eframe::egui::{self, RichText, Ui};
 
 use crate::app::section;
 use crate::codec;
+use crate::i18n::{tr, trf};
 
 pub struct Tools {
     input: String,
@@ -27,7 +28,7 @@ fn copy_row(ui: &mut Ui, name: &str, value: &str) {
                 ui.label(name);
             },
         );
-        if ui.small_button("📋").on_hover_text("Kopieren").clicked() {
+        if ui.small_button("📋").on_hover_text(tr("Copy")).clicked() {
             ui.ctx().copy_text(value.to_string());
         }
         ui.add(egui::Label::new(RichText::new(value).monospace()).wrap());
@@ -58,7 +59,7 @@ fn parse_number(s: &str) -> Result<u64, String> {
     } else {
         lower.parse::<u64>()
     };
-    r.map_err(|_| "Keine gültige Zahl (Beispiele: 255, 0xFF, FFh, 0b1010)".to_string())
+    r.map_err(|_| tr("Not a valid number (examples: 255, 0xFF, FFh, 0b1010)").to_string())
 }
 
 impl Tools {
@@ -81,12 +82,12 @@ impl Tools {
     pub fn ui(&mut self, ui: &mut Ui) {
         egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(16.0)).show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                section(ui, "Daten umrechnen & Prüfsummen");
+                section(ui, tr("Data converter & checksums"));
                 ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.input_hex, false, "Eingabe als Text");
-                    ui.selectable_value(&mut self.input_hex, true, "Eingabe als Hex");
+                    ui.selectable_value(&mut self.input_hex, false, tr("Input as text"));
+                    ui.selectable_value(&mut self.input_hex, true, tr("Input as hex"));
                     ui.label(RichText::new("ℹ").weak())
-                        .on_hover_text("Text: $0D, #13, \\r \\n wie in den Sendezeilen. Hex: 01 02 FF");
+                        .on_hover_text(tr("Text: $0D, #13, \\r \\n as in the send lines. Hex: 01 02 FF"));
                 });
                 ui.add(
                     egui::TextEdit::multiline(&mut self.input)
@@ -103,11 +104,11 @@ impl Tools {
                         ui.add_space(4.0);
                         ui.columns(2, |cols| {
                             table(&mut cols[0], |ui| {
-                                    copy_row(ui, "Länge", &format!("{} Byte", d.len()));
-                                    copy_row(ui, "Hex", &codec::to_hex(&d));
-                                    copy_row(ui, "Dezimal", &codec::to_dec(&d));
-                                    copy_row(ui, "Binär", &codec::to_bin(&d));
-                                    copy_row(ui, "Text", &codec::to_text(&d, true));
+                                    copy_row(ui, tr("Length"), &trf("{} bytes", &[&d.len()]));
+                                    copy_row(ui, tr("Hex"), &codec::to_hex(&d));
+                                    copy_row(ui, tr("Decimal"), &codec::to_dec(&d));
+                                    copy_row(ui, tr("Binary"), &codec::to_bin(&d));
+                                    copy_row(ui, tr("Text"), &codec::to_text(&d, true));
                                     let esc: String = d
                                         .iter()
                                         .map(|&b| match b {
@@ -117,19 +118,19 @@ impl Tools {
                                             _ => format!("${b:02X}"),
                                         })
                                         .collect();
-                                    copy_row(ui, "Sendezeile", &esc);
+                                    copy_row(ui, tr("Send line"), &esc);
                             });
                             table(&mut cols[1], |ui| {
                                     let s8 = codec::sum8(&d);
-                                    copy_row(ui, "Summe (8 Bit)", &format!("{s8:02X}"));
-                                    copy_row(ui, "Summe, 2er-Komplement", &format!("{:02X}", s8.wrapping_neg()));
-                                    copy_row(ui, "XOR (8 Bit)", &format!("{:02X}", codec::xor8(&d)));
+                                    copy_row(ui, tr("Sum (8-bit)"), &format!("{s8:02X}"));
+                                    copy_row(ui, tr("Sum, two's complement"), &format!("{:02X}", s8.wrapping_neg()));
+                                    copy_row(ui, tr("XOR (8-bit)"), &format!("{:02X}", codec::xor8(&d)));
                                     copy_row(ui, "CRC-8", &format!("{:02X}", codec::crc8(&d)));
                                     let m = codec::crc16_modbus(&d);
                                     copy_row(
                                         ui,
                                         "CRC-16 Modbus",
-                                        &format!("{m:04X}  (gesendet: {:02X} {:02X})", m & 0xFF, m >> 8),
+                                        &trf("{}  (sent: {} {})", &[&format!("{m:04X}"), &format!("{:02X}", m & 0xFF), &format!("{:02X}", m >> 8)]),
                                     );
                                     copy_row(ui, "CRC-16 CCITT", &format!("{:04X}", codec::crc16_ccitt(&d)));
                                     copy_row(ui, "CRC-32", &format!("{:08X}", codec::crc32(&d)));
@@ -139,27 +140,27 @@ impl Tools {
                 }
 
                 ui.add_space(14.0);
-                section(ui, "Zahlen umrechnen");
+                section(ui, tr("Number converter"));
                 ui.horizontal(|ui| {
-                    ui.label("Zahl");
+                    ui.label(tr("Number"));
                     ui.add(egui::TextEdit::singleline(&mut self.number).font(egui::TextStyle::Monospace).desired_width(200.0));
-                    ui.label(RichText::new("z. B. 255, 0xFF, FFh, 0b1010").weak());
+                    ui.label(RichText::new(tr("e.g. 255, 0xFF, FFh, 0b1010")).weak());
                 });
                 match parse_number(&self.number) {
                     Ok(n) => {
                         table(ui, |ui| {
-                            copy_row(ui, "Dezimal", &n.to_string());
-                            copy_row(ui, "Hex", &format!("{n:X}"));
-                            copy_row(ui, "Binär", &format!("{n:b}"));
-                            copy_row(ui, "Oktal", &format!("{n:o}"));
+                            copy_row(ui, tr("Decimal"), &n.to_string());
+                            copy_row(ui, tr("Hex"), &format!("{n:X}"));
+                            copy_row(ui, tr("Binary"), &format!("{n:b}"));
+                            copy_row(ui, tr("Octal"), &format!("{n:o}"));
                             let be: Vec<u8> = n.to_be_bytes().into_iter().skip_while(|b| *b == 0).collect();
                             let be = if be.is_empty() { vec![0] } else { be };
                             let le: Vec<u8> = be.iter().rev().copied().collect();
-                            copy_row(ui, "Bytes (Big Endian)", &codec::to_hex(&be));
-                            copy_row(ui, "Bytes (Little Endian)", &codec::to_hex(&le));
+                            copy_row(ui, tr("Bytes (big endian)"), &codec::to_hex(&be));
+                            copy_row(ui, tr("Bytes (little endian)"), &codec::to_hex(&le));
                             if n <= 0xFF {
                                 let c = n as u8;
-                                copy_row(ui, "Zeichen", &crate::ascii::char_name(c));
+                                copy_row(ui, tr("Character"), &crate::ascii::char_name(c));
                             }
                         });
                     }

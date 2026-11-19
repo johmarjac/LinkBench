@@ -1,0 +1,28 @@
+//! German texts for tools.
+
+pub const T: &[(&str, &str)] = &[
+    ("Copy", "Kopieren"),
+    ("Not a valid number (examples: 255, 0xFF, FFh, 0b1010)", "Keine gültige Zahl (Beispiele: 255, 0xFF, FFh, 0b1010)"),
+    ("Data converter & checksums", "Daten umrechnen & Prüfsummen"),
+    ("Input as text", "Eingabe als Text"),
+    ("Input as hex", "Eingabe als Hex"),
+    ("Text: $0D, #13, \\r \\n as in the send lines. Hex: 01 02 FF", "Text: $0D, #13, \\r \\n wie in den Sendezeilen. Hex: 01 02 FF"),
+    ("Length", "Länge"),
+    ("{} bytes", "{} Byte"),
+    ("Hex", "Hex"),
+    ("Decimal", "Dezimal"),
+    ("Binary", "Binär"),
+    ("Text", "Text"),
+    ("Send line", "Sendezeile"),
+    ("Sum (8-bit)", "Summe (8 Bit)"),
+    ("Sum, two's complement", "Summe, 2er-Komplement"),
+    ("XOR (8-bit)", "XOR (8 Bit)"),
+    ("{}  (sent: {} {})", "{}  (gesendet: {} {})"),
+    ("Number converter", "Zahlen umrechnen"),
+    ("Number", "Zahl"),
+    ("e.g. 255, 0xFF, FFh, 0b1010", "z. B. 255, 0xFF, FFh, 0b1010"),
+    ("Octal", "Oktal"),
+    ("Bytes (big endian)", "Bytes (Big Endian)"),
+    ("Bytes (little endian)", "Bytes (Little Endian)"),
+    ("Character", "Zeichen"),
+];

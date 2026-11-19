@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::section;
 use crate::codec;
+use crate::i18n::{tr, trf};
 use crate::link::SerialConfig;
 use crate::sessions::{GREEN, RED, Session, Shared, big_button, serial_settings_ui, status_line};
 use crate::terminal::{Dir, TermSettings, Terminal, View};
@@ -46,14 +47,14 @@ impl Func {
     }
     pub fn label(self) -> &'static str {
         match self {
-            Func::ReadCoils => "01 Coils lesen",
-            Func::ReadDiscrete => "02 Eingänge lesen (diskret)",
-            Func::ReadHolding => "03 Holding-Register lesen",
-            Func::ReadInput => "04 Input-Register lesen",
-            Func::WriteCoil => "05 Einzelne Coil schreiben",
-            Func::WriteRegister => "06 Einzelnes Register schreiben",
-            Func::WriteCoils => "15 Mehrere Coils schreiben",
-            Func::WriteRegisters => "16 Mehrere Register schreiben",
+            Func::ReadCoils => tr("01 Read Coils"),
+            Func::ReadDiscrete => tr("02 Read Discrete Inputs"),
+            Func::ReadHolding => tr("03 Read Holding Registers"),
+            Func::ReadInput => tr("04 Read Input Registers"),
+            Func::WriteCoil => tr("05 Write Single Coil"),
+            Func::WriteRegister => tr("06 Write Single Register"),
+            Func::WriteCoils => tr("15 Write Multiple Coils"),
+            Func::WriteRegisters => tr("16 Write Multiple Registers"),
         }
     }
     pub fn is_bits(self) -> bool {
@@ -82,16 +83,16 @@ pub enum Reply {
 
 pub fn exception_text(code: u8) -> &'static str {
     match code {
-        1 => "Funktion wird nicht unterstützt",
-        2 => "Ungültige Datenadresse",
-        3 => "Ungültiger Datenwert",
-        4 => "Fehler im Gerät",
-        5 => "Bestätigt, Bearbeitung dauert noch",
-        6 => "Gerät ist beschäftigt",
-        8 => "Speicher-Paritätsfehler",
-        10 => "Gateway-Pfad nicht verfügbar",
-        11 => "Gateway: Zielgerät antwortet nicht",
-        _ => "Unbekannte Ausnahme",
+        1 => tr("Function not supported"),
+        2 => tr("Invalid data address"),
+        3 => tr("Invalid data value"),
+        4 => tr("Device failure"),
+        5 => tr("Acknowledged, processing still in progress"),
+        6 => tr("Device busy"),
+        8 => tr("Memory parity error"),
+        10 => tr("Gateway path unavailable"),
+        11 => tr("Gateway: target device not responding"),
+        _ => tr("Unknown exception"),
     }
 }
 
@@ -101,28 +102,28 @@ pub fn build_pdu(r: &Request) -> Result<Vec<u8>, String> {
     match r.func {
         Func::ReadCoils | Func::ReadDiscrete => {
             if !(1..=2000).contains(&r.qty) {
-                return Err("Anzahl muss zwischen 1 und 2000 liegen".into());
+                return Err(tr("Quantity must be between 1 and 2000").into());
             }
             p.extend_from_slice(&r.qty.to_be_bytes());
         }
         Func::ReadHolding | Func::ReadInput => {
             if !(1..=125).contains(&r.qty) {
-                return Err("Anzahl muss zwischen 1 und 125 liegen".into());
+                return Err(tr("Quantity must be between 1 and 125").into());
             }
             p.extend_from_slice(&r.qty.to_be_bytes());
         }
         Func::WriteCoil => {
-            let v = *r.values.first().ok_or("Kein Wert angegeben")?;
+            let v = *r.values.first().ok_or(tr("No value given"))?;
             p.extend_from_slice(if v != 0 { &[0xFF, 0x00] } else { &[0x00, 0x00] });
         }
         Func::WriteRegister => {
-            let v = *r.values.first().ok_or("Kein Wert angegeben")?;
+            let v = *r.values.first().ok_or(tr("No value given"))?;
             p.extend_from_slice(&v.to_be_bytes());
         }
         Func::WriteCoils => {
             let n = r.values.len();
             if !(1..=1968).contains(&n) {
-                return Err("1 bis 1968 Werte angeben".into());
+                return Err(tr("Specify 1 to 1968 values").into());
             }
             p.extend_from_slice(&(n as u16).to_be_bytes());
             let bytes = n.div_ceil(8);
@@ -138,7 +139,7 @@ pub fn build_pdu(r: &Request) -> Result<Vec<u8>, String> {
         Func::WriteRegisters => {
             let n = r.values.len();
             if !(1..=123).contains(&n) {
-                return Err("1 bis 123 Werte angeben".into());
+                return Err(tr("Specify 1 to 123 values").into());
             }
             p.extend_from_slice(&(n as u16).to_be_bytes());
             p.push((n * 2) as u8);
@@ -186,23 +187,23 @@ fn rtu_expected_len(b: &[u8]) -> Option<usize> {
 }
 
 pub fn parse_pdu(req: &Request, pdu: &[u8]) -> Result<Reply, String> {
-    let fc = *pdu.first().ok_or("Leere Antwort")?;
+    let fc = *pdu.first().ok_or(tr("Empty response"))?;
     if fc == req.func.code() | 0x80 {
         let code = pdu.get(1).copied().unwrap_or(0);
-        return Err(format!("Ausnahme {code:02}: {}", exception_text(code)));
+        return Err(trf("Exception {}: {}", &[&format!("{code:02}"), &exception_text(code)]));
     }
     if fc != req.func.code() {
-        return Err(format!("Unerwarteter Funktionscode {fc}"));
+        return Err(trf("Unexpected function code {}", &[&fc]));
     }
     match req.func {
         Func::ReadCoils | Func::ReadDiscrete => {
-            let n = *pdu.get(1).ok_or("Antwort zu kurz")? as usize;
-            let data = pdu.get(2..2 + n).ok_or("Antwort zu kurz")?;
+            let n = *pdu.get(1).ok_or(tr("Response too short"))? as usize;
+            let data = pdu.get(2..2 + n).ok_or(tr("Response too short"))?;
             Ok(Reply::Bits((0..req.qty as usize).map(|i| data.get(i / 8).is_some_and(|b| b & (1 << (i % 8)) != 0)).collect()))
         }
         Func::ReadHolding | Func::ReadInput => {
-            let n = *pdu.get(1).ok_or("Antwort zu kurz")? as usize;
-            let data = pdu.get(2..2 + n).ok_or("Antwort zu kurz")?;
+            let n = *pdu.get(1).ok_or(tr("Response too short"))? as usize;
+            let data = pdu.get(2..2 + n).ok_or(tr("Response too short"))?;
             Ok(Reply::Regs(data.chunks(2).filter(|c| c.len() == 2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect()))
         }
         _ => Ok(Reply::Written),
@@ -267,19 +268,19 @@ fn open_port(t: &Target) -> Result<(Port, String), String> {
                 .stop_bits(if cfg.stop_bits == 2 { serialport::StopBits::Two } else { serialport::StopBits::One })
                 .timeout(Duration::from_millis(10))
                 .open()
-                .map_err(|e| format!("{} konnte nicht geöffnet werden: {e}", cfg.port))?;
-            Ok((Port::Serial(p), format!("{} geöffnet ({} Baud)", cfg.port, cfg.baud)))
+                .map_err(|e| trf("{} could not be opened: {}", &[&cfg.port, &e]))?;
+            Ok((Port::Serial(p), trf("{} opened ({} baud)", &[&cfg.port, &cfg.baud])))
         }
         Target::Tcp(host, port) => {
             let addr = (host.trim(), *port)
                 .to_socket_addrs()
-                .map_err(|e| format!("Adresse '{host}' nicht auflösbar: {e}"))?
+                .map_err(|e| trf("Address '{}' could not be resolved: {}", &[&host, &e]))?
                 .next()
-                .ok_or("Adresse nicht auflösbar")?;
+                .ok_or(tr("Address could not be resolved"))?;
             let s = TcpStream::connect_timeout(&addr, Duration::from_secs(5))
-                .map_err(|e| format!("Verbindung zu {addr} fehlgeschlagen: {e}"))?;
+                .map_err(|e| trf("Connection to {} failed: {}", &[&addr, &e]))?;
             let _ = s.set_nodelay(true);
-            Ok((Port::Tcp(s), format!("Verbunden mit {addr}")))
+            Ok((Port::Tcp(s), trf("Connected to {}", &[&addr])))
         }
     }
 }
@@ -292,7 +293,7 @@ fn transact(port: &mut Port, tid: u16, req: &Request, timeout: Duration, out: &i
         Port::Serial(p) => {
             let _ = p.clear(serialport::ClearBuffer::Input);
             let frame = rtu_frame(req.unit, &pdu);
-            p.write_all(&frame).map_err(|e| format!("Senden fehlgeschlagen: {e}"))?;
+            p.write_all(&frame).map_err(|e| trf("Send failed: {}", &[&e]))?;
             let _ = p.flush();
             out(MbEvent::Frame { tx: true, data: frame });
             let mut buf = Vec::new();
@@ -307,45 +308,45 @@ fn transact(port: &mut Port, tid: u16, req: &Request, timeout: Duration, out: &i
                 if Instant::now() > deadline {
                     if !buf.is_empty() {
                         out(MbEvent::Frame { tx: false, data: buf });
-                        return Err("Unvollständige Antwort (Zeitüberschreitung)".into());
+                        return Err(tr("Incomplete response (timeout)").into());
                     }
-                    return Err("Keine Antwort (Zeitüberschreitung)".into());
+                    return Err(tr("No response (timeout)").into());
                 }
                 match p.read(&mut tmp) {
                     Ok(n) => buf.extend_from_slice(&tmp[..n]),
                     Err(e) if e.kind() == ErrorKind::TimedOut => {}
-                    Err(e) => return Err(format!("Lesefehler: {e}")),
+                    Err(e) => return Err(trf("Read error: {}", &[&e])),
                 }
             }
             out(MbEvent::Frame { tx: false, data: buf.clone() });
             let n = buf.len();
             if n < 4 {
-                return Err("Antwort zu kurz".into());
+                return Err(tr("Response too short").into());
             }
             let crc = codec::crc16_modbus(&buf[..n - 2]);
             if buf[n - 2] != (crc & 0xFF) as u8 || buf[n - 1] != (crc >> 8) as u8 {
-                return Err("CRC-Fehler in der Antwort".into());
+                return Err(tr("CRC error in response").into());
             }
             if buf[0] != req.unit {
-                return Err(format!("Antwort von falscher Geräteadresse {}", buf[0]));
+                return Err(trf("Response from wrong unit ID {}", &[&buf[0]]));
             }
             parse_pdu(req, &buf[1..n - 2])
         }
         Port::Tcp(s) => {
             let frame = tcp_frame(tid, req.unit, &pdu);
-            s.write_all(&frame).map_err(|e| format!("Senden fehlgeschlagen: {e}"))?;
+            s.write_all(&frame).map_err(|e| trf("Send failed: {}", &[&e]))?;
             out(MbEvent::Frame { tx: true, data: frame });
             loop {
                 let left = deadline.saturating_duration_since(Instant::now());
                 if left.is_zero() {
-                    return Err("Keine Antwort (Zeitüberschreitung)".into());
+                    return Err(tr("No response (timeout)").into());
                 }
                 let _ = s.set_read_timeout(Some(left));
                 let mut head = [0u8; 7];
                 read_exact(s, &mut head)?;
                 let len = u16::from_be_bytes([head[4], head[5]]) as usize;
                 if len < 2 || len > 260 {
-                    return Err("Ungültiger Modbus-TCP-Kopf".into());
+                    return Err(tr("Invalid Modbus TCP header").into());
                 }
                 let mut rest = vec![0u8; len - 1];
                 read_exact(s, &mut rest)?;
@@ -361,11 +362,16 @@ fn transact(port: &mut Port, tid: u16, req: &Request, timeout: Duration, out: &i
     }
 }
 
+/// Errors after which the connection cannot be used any more.
+fn is_dead_link(e: &str) -> bool {
+    e == tr("Connection closed by peer") || e.starts_with(tr("Send failed: {}").trim_end_matches("{}"))
+}
+
 fn read_exact(s: &mut TcpStream, buf: &mut [u8]) -> Result<(), String> {
     s.read_exact(buf).map_err(|e| match e.kind() {
-        ErrorKind::WouldBlock | ErrorKind::TimedOut => "Keine Antwort (Zeitüberschreitung)".to_string(),
-        ErrorKind::UnexpectedEof => "Verbindung von der Gegenstelle geschlossen".to_string(),
-        _ => format!("Lesefehler: {e}"),
+        ErrorKind::WouldBlock | ErrorKind::TimedOut => tr("No response (timeout)").to_string(),
+        ErrorKind::UnexpectedEof => tr("Connection closed by peer").to_string(),
+        _ => trf("Read error: {}", &[&e]),
     })
 }
 
@@ -394,7 +400,7 @@ fn spawn(ctx: &egui::Context, target: Target, timeout_ms: u64) -> MbLink {
                     tid = tid.wrapping_add(1);
                     let start = Instant::now();
                     let res = transact(&mut port, tid, &req, Duration::from_millis(timeout_ms), &out);
-                    let dead = matches!(&res, Err(e) if e.starts_with("Verbindung") || e.starts_with("Senden"));
+                    let dead = matches!(&res, Err(e) if is_dead_link(e));
                     out(MbEvent::Done { req, res, ms: start.elapsed().as_millis() });
                     if dead {
                         break;
@@ -432,17 +438,17 @@ pub enum Format {
 impl Format {
     pub fn label(self) -> &'static str {
         match self {
-            Format::Unsigned => "16 Bit ohne Vorzeichen",
-            Format::Signed => "16 Bit mit Vorzeichen",
-            Format::Hex => "Hex",
-            Format::Binary => "Binär",
-            Format::U32Be => "32 Bit ohne Vorzeichen (AB CD)",
-            Format::U32Le => "32 Bit ohne Vorzeichen (CD AB)",
-            Format::I32Be => "32 Bit mit Vorzeichen (AB CD)",
-            Format::I32Le => "32 Bit mit Vorzeichen (CD AB)",
-            Format::F32Be => "Float 32 (AB CD)",
-            Format::F32Le => "Float 32 (CD AB)",
-            Format::Ascii => "Text (2 Zeichen je Register)",
+            Format::Unsigned => tr("16-bit unsigned"),
+            Format::Signed => tr("16-bit signed"),
+            Format::Hex => tr("Hex"),
+            Format::Binary => tr("Binary"),
+            Format::U32Be => tr("32-bit unsigned (AB CD)"),
+            Format::U32Le => tr("32-bit unsigned (CD AB)"),
+            Format::I32Be => tr("32-bit signed (AB CD)"),
+            Format::I32Le => tr("32-bit signed (CD AB)"),
+            Format::F32Be => tr("Float 32 (AB CD)"),
+            Format::F32Le => tr("Float 32 (CD AB)"),
+            Format::Ascii => tr("Text (2 characters per register)"),
         }
     }
     pub fn wide(self) -> bool {
@@ -514,18 +520,18 @@ pub fn parse_values(s: &str, bits: bool) -> Result<Vec<u16>, String> {
                 return match l.as_str() {
                     "1" | "an" | "ein" | "on" | "true" => Ok(1),
                     "0" | "aus" | "off" | "false" => Ok(0),
-                    _ => Err(format!("'{t}' ist kein Coil-Wert (1/0, an/aus)")),
+                    _ => Err(trf("'{}' is not a coil value (1/0, on/off)", &[&t])),
                 };
             }
             let v: i64 = if let Some(h) = l.strip_prefix("0x") {
-                i64::from_str_radix(h, 16).map_err(|_| format!("'{t}' ist keine Hex-Zahl"))?
+                i64::from_str_radix(h, 16).map_err(|_| trf("'{}' is not a hex number", &[&t]))?
             } else if let Some(b) = l.strip_prefix("0b") {
-                i64::from_str_radix(b, 2).map_err(|_| format!("'{t}' ist keine Binärzahl"))?
+                i64::from_str_radix(b, 2).map_err(|_| trf("'{}' is not a binary number", &[&t]))?
             } else {
-                l.parse().map_err(|_| format!("'{t}' ist keine Zahl"))?
+                l.parse().map_err(|_| trf("'{}' is not a number", &[&t]))?
             };
             if !(-32768..=65535).contains(&v) {
-                return Err(format!("{t} passt nicht in ein Register (−32768 … 65535)"));
+                return Err(trf("{} does not fit in a register (−32768 … 65535)", &[&t]));
             }
             Ok(v as u16)
         })
@@ -614,7 +620,7 @@ impl ModbusSession {
                 .unwrap_or_else(|| crate::sessions::default_port_name().into());
         }
         let mut log = Terminal::new(TermSettings { view: View::Hex, ..TermSettings::default() });
-        log.info("Bereit. Verbindung einstellen und „Verbinden“ klicken.");
+        log.info(tr("Ready. Set up the connection and click \"Connect\"."));
         Self {
             s,
             link: None,
@@ -696,18 +702,18 @@ impl ModbusSession {
 
     fn settings_ui(&mut self, ui: &mut Ui, shared: &mut Shared) {
         let active = self.link.is_some();
-        section(ui, "Verbindung");
+        section(ui, tr("Connection"));
         ui.add_enabled_ui(!active, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.s.transport, Transport::Tcp, "Modbus TCP");
-                ui.selectable_value(&mut self.s.transport, Transport::Rtu, "Modbus RTU (seriell)");
+                ui.selectable_value(&mut self.s.transport, Transport::Rtu, tr("Modbus RTU (serial)"));
             });
             ui.add_space(4.0);
             match self.s.transport {
                 Transport::Tcp => {
                     egui::Grid::new("mb_tcp").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                        ui.label("Adresse");
-                        ui.add(egui::TextEdit::singleline(&mut self.s.host).desired_width(150.0).hint_text("IP oder Hostname"));
+                        ui.label(tr("Address"));
+                        ui.add(egui::TextEdit::singleline(&mut self.s.host).desired_width(150.0).hint_text(tr("IP or hostname")));
                         ui.end_row();
                         ui.label("Port");
                         ui.add(egui::DragValue::new(&mut self.s.port).range(1..=65535));
@@ -717,38 +723,38 @@ impl ModbusSession {
                 Transport::Rtu => serial_settings_ui(ui, "mb_serial", &mut self.s.serial, &mut shared.ports, false),
             }
             ui.horizontal(|ui| {
-                ui.label("Zeitlimit");
+                ui.label(tr("Timeout"));
                 ui.add(egui::DragValue::new(&mut self.s.timeout_ms).range(20..=60_000).suffix(" ms").speed(10.0));
             });
         });
         ui.add_space(6.0);
-        if big_button(ui, active, "Verbinden", "Trennen").clicked() {
+        if big_button(ui, active, tr("Connect"), tr("Disconnect")).clicked() {
             if active {
                 self.link = None;
                 self.open = false;
                 self.starting = false;
                 self.in_flight = false;
-                self.log.info("Getrennt");
+                self.log.info(tr("Disconnected"));
             } else {
                 self.connect(ui.ctx());
             }
         }
-        status_line(ui, self.open, self.starting, "verbunden", "getrennt");
+        status_line(ui, self.open, self.starting, tr("connected"), tr("disconnected"));
 
-        section(ui, "Gerät");
+        section(ui, tr("Device"));
         ui.horizontal(|ui| {
-            ui.label("Geräteadresse");
+            ui.label(tr("Unit ID"));
             ui.add(egui::DragValue::new(&mut self.s.unit).range(0..=255))
-                .on_hover_text("Slave-/Unit-ID, meist 1. Bei Modbus TCP oft 1 oder 255.");
+                .on_hover_text(tr("Slave / unit ID, usually 1. For Modbus TCP often 1 or 255."));
         });
 
-        section(ui, "Statistik");
-        ui.label(format!("Erfolgreich: {}", self.ok));
-        ui.label(format!("Fehler: {}", self.errors));
+        section(ui, tr("Statistics"));
+        ui.label(trf("Successful: {}", &[&self.ok]));
+        ui.label(trf("Errors: {}", &[&self.errors]));
         if let Some((good, msg)) = &self.last_result {
             ui.label(RichText::new(msg).color(if *good { GREEN } else { RED }).small());
         }
-        if ui.small_button("Zähler zurücksetzen").clicked() {
+        if ui.small_button(tr("Reset counters")).clicked() {
             self.ok = 0;
             self.errors = 0;
         }
@@ -760,7 +766,7 @@ impl ModbusSession {
         egui::Frame::group(ui.style()).inner_margin(8.0).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Lesen").strong());
+                ui.label(RichText::new(tr("Read")).strong());
                 egui::ComboBox::from_id_salt("mb_read_func")
                     .selected_text(self.s.read_func.label())
                     .width(220.0)
@@ -769,18 +775,18 @@ impl ModbusSession {
                             ui.selectable_value(&mut self.s.read_func, f, f.label());
                         }
                     });
-                ui.label("ab Adresse");
+                ui.label(tr("from address"));
                 ui.add(egui::DragValue::new(&mut self.s.read_addr).range(0..=65535))
-                    .on_hover_text("Protokolladresse, beginnt bei 0 (Register 40001 = Adresse 0)");
-                ui.label("Anzahl");
+                    .on_hover_text(tr("Protocol address, starts at 0 (register 40001 = address 0)"));
+                ui.label(tr("Quantity"));
                 let max = if self.s.read_func.is_bits() { 2000 } else { 125 };
                 ui.add(egui::DragValue::new(&mut self.s.read_qty).range(1..=max));
-                if ui.add_enabled(connected && !self.in_flight, egui::Button::new("▶ Lesen")).clicked() {
+                if ui.add_enabled(connected && !self.in_flight, egui::Button::new(tr("▶ Read"))).clicked() {
                     let r = self.read_request();
                     self.request(r);
                 }
                 ui.separator();
-                ui.checkbox(&mut self.s.poll, "zyklisch alle").on_hover_text("Automatisch immer wieder lesen");
+                ui.checkbox(&mut self.s.poll, tr("Poll every")).on_hover_text(tr("Read repeatedly and automatically"));
                 ui.add(egui::DragValue::new(&mut self.s.poll_ms).range(50..=3_600_000).suffix(" ms").speed(10.0));
             });
         });
@@ -789,7 +795,7 @@ impl ModbusSession {
         egui::Frame::group(ui.style()).inner_margin(8.0).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Schreiben").strong());
+                ui.label(RichText::new(tr("Write")).strong());
                 egui::ComboBox::from_id_salt("mb_write_func")
                     .selected_text(self.s.write_func.label())
                     .width(220.0)
@@ -798,13 +804,13 @@ impl ModbusSession {
                             ui.selectable_value(&mut self.s.write_func, f, f.label());
                         }
                     });
-                ui.label("Adresse");
+                ui.label(tr("Address"));
                 ui.add(egui::DragValue::new(&mut self.s.write_addr).range(0..=65535));
-                ui.label("Werte");
-                let hint = if self.s.write_func.is_bits() { "1 0 1 oder an aus" } else { "z. B. 100, 0x1F, -5" };
+                ui.label(tr("Values"));
+                let hint = if self.s.write_func.is_bits() { tr("1 0 1 or on off") } else { tr("e.g. 100, 0x1F, -5") };
                 ui.add(egui::TextEdit::singleline(&mut self.s.write_values).hint_text(hint).desired_width(200.0))
-                    .on_hover_text("Mehrere Werte mit Komma oder Leerzeichen trennen. Bei Funktion 05/06 zählt nur der erste.");
-                if ui.add_enabled(connected && !self.in_flight, egui::Button::new("✏ Schreiben")).clicked() {
+                    .on_hover_text(tr("Separate multiple values with a comma or space. For function 05/06 only the first counts."));
+                if ui.add_enabled(connected && !self.in_flight, egui::Button::new(tr("✏ Write"))).clicked() {
                     match parse_values(&self.s.write_values, self.s.write_func.is_bits()) {
                         Ok(values) if !values.is_empty() => {
                             let req = Request {
@@ -816,7 +822,7 @@ impl ModbusSession {
                             };
                             self.request(req);
                         }
-                        Ok(_) => self.log.error("Bitte mindestens einen Wert eingeben"),
+                        Ok(_) => self.log.error(tr("Please enter at least one value")),
                         Err(e) => self.log.error(e),
                     }
                 }
@@ -826,9 +832,9 @@ impl ModbusSession {
 
         // ---- results
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Werte").strong().size(14.0));
+            ui.label(RichText::new(tr("Values")).strong().size(14.0));
             if matches!(self.table, Some(Table::Regs(..))) {
-                ui.label("Anzeige");
+                ui.label(tr("Display"));
                 egui::ComboBox::from_id_salt("mb_format").selected_text(self.s.format.label()).width(230.0).show_ui(
                     ui,
                     |ui| {
@@ -854,20 +860,20 @@ impl ModbusSession {
                 ui.set_min_size(ui.available_size());
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match &self.table {
                     None => {
-                        ui.label(RichText::new("Noch keine Werte gelesen.").weak().italics());
+                        ui.label(RichText::new(tr("No values read yet.")).weak().italics());
                     }
                     Some(Table::Bits(start, bits)) => {
                         let is_coils = self.table_func == Some(Func::ReadCoils);
                         egui::Grid::new("mb_bits").num_columns(3).striped(true).spacing([24.0, 4.0]).show(ui, |ui| {
-                            ui.label(RichText::new("Adresse").strong());
-                            ui.label(RichText::new("Wert").strong());
+                            ui.label(RichText::new(tr("Address")).strong());
+                            ui.label(RichText::new(tr("Value")).strong());
                             ui.label("");
                             ui.end_row();
                             for (i, b) in bits.iter().enumerate() {
                                 let a = start.wrapping_add(i as u16);
                                 ui.monospace(a.to_string());
-                                ui.label(RichText::new(if *b { "● 1 (an)" } else { "○ 0 (aus)" }).color(if *b { GREEN } else { Color32::GRAY }));
-                                if is_coils && ui.small_button("umschalten").clicked() {
+                                ui.label(RichText::new(if *b { tr("● 1 (on)") } else { tr("○ 0 (off)") }).color(if *b { GREEN } else { Color32::GRAY }));
+                                if is_coils && ui.small_button(tr("Toggle")).clicked() {
                                     write_coil = Some((a, !*b));
                                 }
                                 ui.end_row();
@@ -878,16 +884,16 @@ impl ModbusSession {
                         let rows = format_regs(*start, regs, self.s.format);
                         let is_holding = self.table_func == Some(Func::ReadHolding);
                         egui::Grid::new("mb_regs").num_columns(4).striped(true).spacing([24.0, 4.0]).show(ui, |ui| {
-                            ui.label(RichText::new("Adresse").strong());
-                            ui.label(RichText::new("Wert").strong());
-                            ui.label(RichText::new("Roh (Hex)").strong());
+                            ui.label(RichText::new(tr("Address")).strong());
+                            ui.label(RichText::new(tr("Value")).strong());
+                            ui.label(RichText::new(tr("Raw (hex)")).strong());
                             ui.label("");
                             ui.end_row();
                             for (a, v, raw) in rows {
                                 ui.monospace(a.to_string());
                                 ui.monospace(RichText::new(v).strong());
                                 ui.monospace(RichText::new(raw).weak());
-                                if is_holding && ui.small_button("✏").on_hover_text("Dieses Register schreiben").clicked() {
+                                if is_holding && ui.small_button("✏").on_hover_text(tr("Write this register")).clicked() {
                                     edit_reg = Some(a);
                                 }
                                 ui.end_row();
@@ -960,7 +966,7 @@ impl Session for ModbusSession {
                     match res {
                         Ok(reply) => {
                             self.ok += 1;
-                            self.last_result = Some((true, format!("{} – OK in {ms} ms", req.func.label())));
+                            self.last_result = Some((true, trf("{} – OK in {} ms", &[&req.func.label(), &ms])));
                             match reply {
                                 Reply::Bits(b) => {
                                     self.table = Some(Table::Bits(req.addr, b));
@@ -971,7 +977,7 @@ impl Session for ModbusSession {
                                     self.table_func = Some(req.func);
                                 }
                                 Reply::Written => {
-                                    self.log.info(format!("Geschrieben: {} ab Adresse {}", req.func.label(), req.addr));
+                                    self.log.info(trf("Written: {} from address {}", &[&req.func.label(), &req.addr]));
                                     self.apply_write(&req);
                                 }
                             }
@@ -990,7 +996,7 @@ impl Session for ModbusSession {
             self.open = false;
             self.starting = false;
             self.in_flight = false;
-            self.log.info("Verbindung beendet");
+            self.log.info(tr("Connection closed"));
             return;
         }
         if self.reread && self.open && !self.in_flight {
@@ -1031,9 +1037,9 @@ impl Session for ModbusSession {
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(10, 6)))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Datenverkehr").strong());
-                    ui.checkbox(&mut self.log.s.timestamps, "Zeit");
-                    if ui.small_button("🗑 Leeren").clicked() {
+                    ui.label(RichText::new(tr("Traffic")).strong());
+                    ui.checkbox(&mut self.log.s.timestamps, tr("Time"));
+                    if ui.small_button(tr("🗑 Clear")).clicked() {
                         self.log.clear();
                     }
                 });
@@ -1067,7 +1073,7 @@ mod tests {
     fn exception_is_reported() {
         let req = Request { unit: 1, func: Func::ReadHolding, addr: 0, qty: 1, values: vec![] };
         let e = parse_pdu(&req, &[0x83, 0x02]).unwrap_err();
-        assert!(e.contains("Ungültige Datenadresse"));
+        assert!(e.contains("Invalid data address") || e.contains("Ungültige Datenadresse"));
     }
 
     #[test]

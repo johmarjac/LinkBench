@@ -1,4 +1,4 @@
-# Builds PortWerk for every platform and publishes a GitHub release.
+# Builds LinkBench for every platform and publishes a GitHub release.
 #
 # Start it by hand: GitHub → Actions → "Release" → "Run workflow",
 # enter a version like 0.2.0. Or push a tag such as v0.2.0.
@@ -6,12 +6,12 @@
 # the old release and its tag are removed right before the new one is published.
 #
 # Result per release:
-#   Windows x64   PortWerk-<v>-windows-x64.msi            (installer)
-#                 PortWerk-<v>-windows-x64-portable.exe   (no install needed)
-#   macOS         PortWerk-<v>-macos-universal.dmg        (Intel + Apple Silicon)
-#                 PortWerk-<v>-macos-universal.zip        (the .app)
-#   Linux x64     PortWerk-<v>-linux-x64.deb / .tar.gz
-#   Linux ARM64   PortWerk-<v>-linux-arm64.deb / .tar.gz
+#   Windows x64   LinkBench-<v>-windows-x64.msi            (installer)
+#                 LinkBench-<v>-windows-x64-portable.exe   (no install needed)
+#   macOS         LinkBench-<v>-macos-universal.dmg        (Intel + Apple Silicon)
+#                 LinkBench-<v>-macos-universal.zip        (the .app)
+#   Linux x64     LinkBench-<v>-linux-x64.deb / .tar.gz
+#   Linux ARM64   LinkBench-<v>-linux-arm64.deb / .tar.gz
 
 name: Release
 
@@ -23,15 +23,15 @@ on:
         required: true
         type: string
       prerelease:
-        description: "Als Vorabversion markieren"
+        description: "Mark as pre-release / Als Vorabversion markieren"
         type: boolean
         default: false
       draft:
-        description: "Nur als Entwurf anlegen (noch nicht öffentlich)"
+        description: "Draft only, not public yet / Nur als Entwurf anlegen"
         type: boolean
         default: false
       replace:
-        description: "Vorhandene Version ersetzen (altes Release und Tag werden gelöscht)"
+        description: "Replace existing version (deletes the old release and tag) / Vorhandene Version ersetzen"
         type: boolean
         default: false
   push:
@@ -76,7 +76,7 @@ jobs:
         run: |
           TAG="v${{ steps.v.outputs.version }}"
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::Version $TAG gibt es schon. Neue Versionsnummer wählen oder den Haken 'Vorhandene Version ersetzen' setzen."
+            echo "::error::Version $TAG already exists. Choose a new version number or tick 'Replace existing version' (Vorhandene Version ersetzen)."
             exit 1
           fi
 
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/release/portwerk.exe "dist/PortWerk-$VERSION-windows-x64-portable.exe"
+          cp target/release/linkbench.exe "dist/LinkBench-$VERSION-windows-x64-portable.exe"
       - name: WiX installieren
         run: dotnet tool install --global wix --version 5.0.2
       - name: MSI bauen
@@ -107,9 +107,9 @@ jobs:
         run: |
           wix build -arch x64 `
             -d Version=$env:VERSION `
-            -d BinPath="$PWD\target\release\portwerk.exe" `
-            packaging\windows\PortWerk.wxs `
-            -o "dist\PortWerk-$env:VERSION-windows-x64.msi"
+            -d BinPath="$PWD\target\release\linkbench.exe" `
+            packaging\windows\LinkBench.wxs `
+            -o "dist\LinkBench-$env:VERSION-windows-x64.msi"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Remove-Item dist\*.wixpdb -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
@@ -140,21 +140,21 @@ jobs:
           cargo build --release --target x86_64-apple-darwin
       - name: App-Paket und DMG
         run: |
-          APP="dist/PortWerk.app"
+          APP="dist/LinkBench.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           lipo -create \
-            target/aarch64-apple-darwin/release/portwerk \
-            target/x86_64-apple-darwin/release/portwerk \
-            -output "$APP/Contents/MacOS/PortWerk"
-          chmod +x "$APP/Contents/MacOS/PortWerk"
+            target/aarch64-apple-darwin/release/linkbench \
+            target/x86_64-apple-darwin/release/linkbench \
+            -output "$APP/Contents/MacOS/LinkBench"
+          chmod +x "$APP/Contents/MacOS/LinkBench"
           sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
           codesign --force --deep --sign - "$APP"
-          (cd dist && ditto -c -k --keepParent PortWerk.app "PortWerk-$VERSION-macos-universal.zip")
+          (cd dist && ditto -c -k --keepParent LinkBench.app "LinkBench-$VERSION-macos-universal.zip")
           mkdir -p dmg
           cp -R "$APP" dmg/
           ln -s /Applications dmg/Programme
-          hdiutil create -volname "PortWerk $VERSION" -srcfolder dmg -ov -format UDZO \
-            "dist/PortWerk-$VERSION-macos-universal.dmg"
+          hdiutil create -volname "LinkBench $VERSION" -srcfolder dmg -ov -format UDZO \
+            "dist/LinkBench-$VERSION-macos-universal.dmg"
           rm -rf "$APP"
       - uses: actions/upload-artifact@v4
         with:
@@ -197,10 +197,10 @@ jobs:
       - name: Pakete
         run: |
           mkdir -p dist
-          cargo deb --no-build --output "dist/PortWerk-$VERSION-linux-${{ matrix.arch }}.deb"
-          mkdir -p "pkg/PortWerk-$VERSION"
-          cp target/release/portwerk packaging/linux/portwerk.desktop README.md "pkg/PortWerk-$VERSION/"
-          tar -C pkg -czf "dist/PortWerk-$VERSION-linux-${{ matrix.arch }}.tar.gz" "PortWerk-$VERSION"
+          cargo deb --no-build --output "dist/LinkBench-$VERSION-linux-${{ matrix.arch }}.deb"
+          mkdir -p "pkg/LinkBench-$VERSION"
+          cp target/release/linkbench packaging/linux/linkbench.desktop README.md "pkg/LinkBench-$VERSION/"
+          tar -C pkg -czf "dist/LinkBench-$VERSION-linux-${{ matrix.arch }}.tar.gz" "LinkBench-$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}
@@ -208,7 +208,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Release veröffentlichen
+    name: Publish release
     needs: [prepare, windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
@@ -220,7 +220,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Alte Version entfernen
+      - name: Remove old version
         if: github.event_name == 'workflow_dispatch' && inputs.replace
         env:
           GH_TOKEN: ${{ github.token }}
@@ -228,38 +228,38 @@ jobs:
         run: |
           gh release delete "$TAG" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
           gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" || true
-      - name: Prüfsummen
+      - name: Checksums
         run: |
           cd dist
           sha256sum * > SHA256SUMS.txt
           ls -l
-      - name: Text für die Release-Seite
+      - name: Release page text
         env:
           V: ${{ needs.prepare.outputs.version }}
         run: |
           {
             echo "## Downloads"
             echo
-            echo "| System | Datei |"
+            echo "| System | File |"
             echo "|---|---|"
-            echo "| Windows (Installer) | \`PortWerk-$V-windows-x64.msi\` |"
-            echo "| Windows (portabel, ohne Installation) | \`PortWerk-$V-windows-x64-portable.exe\` |"
-            echo "| macOS (Intel + Apple Silicon) | \`PortWerk-$V-macos-universal.dmg\` |"
-            echo "| Linux (Debian/Ubuntu) | \`PortWerk-$V-linux-x64.deb\` / \`-arm64.deb\` |"
-            echo "| Linux (andere) | \`PortWerk-$V-linux-x64.tar.gz\` / \`-arm64.tar.gz\` |"
+            echo "| Windows (Installer) | \`LinkBench-$V-windows-x64.msi\` |"
+            echo "| Windows (portable, no installation) | \`LinkBench-$V-windows-x64-portable.exe\` |"
+            echo "| macOS (Intel + Apple Silicon) | \`LinkBench-$V-macos-universal.dmg\` |"
+            echo "| Linux (Debian/Ubuntu) | \`LinkBench-$V-linux-x64.deb\` / \`-arm64.deb\` |"
+            echo "| Linux (other) | \`LinkBench-$V-linux-x64.tar.gz\` / \`-arm64.tar.gz\` |"
             echo
-            echo "macOS: Die App ist nicht von Apple beglaubigt. Beim ersten Start mit Rechtsklick → „Öffnen“ starten."
+            echo "macOS: the app is not notarized by Apple. Start it the first time with right-click → Open."
             echo
             # the section "## [V]" of CHANGELOG.md, up to the next "## ["
             if [ -f CHANGELOG.md ]; then
-              awk -v v="## [$V]" 'index($0, v) == 1 { on = 1; print "## Neu in dieser Version"; next } /^## \[/ { on = 0 } on' CHANGELOG.md
+              awk -v v="## [$V]" 'index($0, v) == 1 { on = 1; print "## New in this version"; next } /^## \[/ { on = 0 } on' CHANGELOG.md
             fi
           } > release-body.md
           cat release-body.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: PortWerk ${{ needs.prepare.outputs.version }}
+          name: LinkBench ${{ needs.prepare.outputs.version }}
           target_commitish: ${{ github.sha }}
           prerelease: ${{ inputs.prerelease || false }}
           draft: ${{ inputs.draft || false }}

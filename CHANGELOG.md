@@ -1,4 +1,14 @@
-# Änderungen
+# Changelog / Änderungen
+
+## [0.2.0] – unreleased
+
+The app is now called **LinkBench** (it was PortWerk) and speaks English and German.
+
+- **New name:** LinkBench. Project files are now called `.linkbench`; `.portwerk` files still open, and saved settings move over on the first start.
+- **Languages:** the whole interface, messages, script help and script examples in English and German. LinkBench starts in the computer's language; switch it with 🌐 in the top bar or with `--lang en` / `--lang de`.
+- Installing the new Windows MSI replaces an installed PortWerk.
+
+**Deutsch:** Das Programm heißt jetzt LinkBench (vorher PortWerk) und hat eine deutsche und eine englische Oberfläche (🌐 oben rechts). Projektdateien heißen `.linkbench`, alte `.portwerk`-Dateien öffnen weiterhin.
 
 ## [0.1.0] – 2026-11-13
 

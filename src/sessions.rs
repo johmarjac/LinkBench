@@ -6,6 +6,7 @@ use eframe::egui::{self, Color32, CornerRadius, RichText, Ui};
 use serde::{Deserialize, Serialize};
 
 use crate::app::section;
+use crate::i18n::{tr, trf};
 use crate::link::{self, Cmd, Event, Flow, Link, ModemLines, Parity, SerialConfig};
 use crate::terminal::{Dir, SendMode, SendRequest, TermSettings, Terminal};
 
@@ -143,7 +144,7 @@ impl<T: Session> Group<T> {
                                         }
                                         let r = ui
                                             .add(egui::Label::new(text).sense(egui::Sense::click()).selectable(false))
-                                            .on_hover_text("Klick: anzeigen · Doppelklick: umbenennen · Rechtsklick: mehr");
+                                            .on_hover_text(tr("Click: show · Double-click: rename · Right-click: more"));
                                         if r.clicked() {
                                             act = Some(Act::Select(i));
                                         }
@@ -153,17 +154,17 @@ impl<T: Session> Group<T> {
                                             self.rename_focus = true;
                                         }
                                         r.context_menu(|ui| {
-                                            if ui.button("✏ Umbenennen").clicked() {
+                                            if ui.button(tr("✏ Rename")).clicked() {
                                                 self.rename = Some(i);
                                                 self.rename_buf = s.name().to_string();
                                                 self.rename_focus = true;
                                                 ui.close();
                                             }
-                                            if ui.button("🗐 Duplizieren").clicked() {
+                                            if ui.button(tr("🗐 Duplicate")).clicked() {
                                                 act = Some(Act::Duplicate(i));
                                                 ui.close();
                                             }
-                                            if ui.button("✖ Schließen").clicked() {
+                                            if ui.button(tr("✖ Close")).clicked() {
                                                 act = Some(Act::Close(i));
                                                 ui.close();
                                             }
@@ -171,7 +172,7 @@ impl<T: Session> Group<T> {
                                     }
                                     if ui
                                         .add(egui::Button::new(RichText::new("✖").size(11.0)).frame(false))
-                                        .on_hover_text("Sitzung schließen (Verbindung wird getrennt)")
+                                        .on_hover_text(tr("Close session (connection will be closed)"))
                                         .clicked()
                                     {
                                         act = Some(Act::Close(i));
@@ -179,7 +180,7 @@ impl<T: Session> Group<T> {
                                 });
                             });
                     }
-                    if ui.button("➕ Neu").on_hover_text("Neue Sitzung öffnen").clicked() {
+                    if ui.button(tr("➕ New")).on_hover_text(tr("Open new session")).clicked() {
                         act = Some(Act::New);
                     }
                 });
@@ -199,7 +200,7 @@ impl<T: Session> Group<T> {
             }
             Some(Act::Duplicate(i)) => {
                 let mut d = self.items[i].duplicate();
-                d.set_name(format!("{} (Kopie)", self.items[i].name()));
+                d.set_name(trf("{} (copy)", &[&self.items[i].name()]));
                 self.items.insert(i + 1, d);
                 self.active = i + 1;
             }
@@ -222,9 +223,9 @@ impl<T: Session> Group<T> {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(80.0);
-                    ui.label(RichText::new("Keine Sitzung offen.").size(16.0).weak());
+                    ui.label(RichText::new(tr("No session open.")).size(16.0).weak());
                     ui.add_space(8.0);
-                    if ui.button(RichText::new("➕ Neue Sitzung").size(15.0)).clicked() {
+                    if ui.button(RichText::new(tr("➕ New session")).size(15.0)).clicked() {
                         let n = self.next_name(prefix);
                         self.items.push(make(n));
                         self.active = 0;
@@ -315,7 +316,7 @@ impl Conn {
             return;
         }
         if self.needs_target && to.is_none() {
-            self.term.error("Noch kein Absender bekannt – erst Daten empfangen oder ein Ziel eintragen");
+            self.term.error(tr("No sender known yet – receive data first or enter a target"));
             return;
         }
         if let Some(l) = &self.link {
@@ -366,7 +367,7 @@ pub struct SerialSaved {
 
 impl Default for SerialSaved {
     fn default() -> Self {
-        Self { name: "Seriell 1".into(), cfg: SerialConfig::default(), dtr: true, rts: true, term: TermSettings::default() }
+        Self { name: tr("Serial 1").into(), cfg: SerialConfig::default(), dtr: true, rts: true, term: TermSettings::default() }
     }
 }
 
@@ -397,7 +398,7 @@ impl SerialSession {
             rts: s.rts,
             brk: false,
             lines: ModemLines::default(),
-            conn: Conn::new(s.term, "Bereit. Schnittstelle wählen und „Öffnen“ klicken."),
+            conn: Conn::new(s.term, tr(r#"Ready. Choose a port and click "Open"."#)),
         }
     }
 
@@ -456,37 +457,37 @@ impl Session for SerialSession {
         let cfg = &mut self.cfg;
         let (dtr, rts, brk, lines) = (&mut self.dtr, &mut self.rts, &mut self.brk, self.lines);
         let reqs = self.conn.frame(ui, |ui, conn| {
-            section(ui, "Schnittstelle");
+            section(ui, tr("Interface"));
             serial_settings_ui(ui, "serial", cfg, &mut shared.ports, conn.active());
             ui.add_space(6.0);
-            if big_button(ui, conn.active(), "Öffnen", "Schließen").clicked() {
+            if big_button(ui, conn.active(), tr("Open"), tr("Close")).clicked() {
                 if conn.active() {
                     conn.stop();
                 } else if cfg.port.trim().is_empty() {
-                    conn.term.error("Bitte zuerst einen Port wählen");
+                    conn.term.error(tr("Please choose a port first"));
                 } else {
                     let mut c = cfg.clone();
                     c.port = c.port.trim().to_string();
                     conn.start(link::open_serial(ui.ctx(), c, *dtr, *rts));
                 }
             }
-            status_line(ui, conn.open, conn.starting, "offen", "geschlossen");
+            status_line(ui, conn.open, conn.starting, tr("open"), tr("closed"));
 
-            section(ui, "Steuerleitungen");
+            section(ui, tr("Control lines"));
             ui.horizontal(|ui| {
-                if ui.toggle_value(dtr, "DTR").on_hover_text("Data Terminal Ready setzen").changed() {
+                if ui.toggle_value(dtr, "DTR").on_hover_text(tr("Set Data Terminal Ready")).changed() {
                     if let Some(l) = &conn.link {
                         l.send(Cmd::SetDtr(*dtr));
                     }
                 }
-                if ui.toggle_value(rts, "RTS").on_hover_text("Request To Send setzen").changed() {
+                if ui.toggle_value(rts, "RTS").on_hover_text(tr("Set Request To Send")).changed() {
                     if let Some(l) = &conn.link {
                         l.send(Cmd::SetRts(*rts));
                     }
                 }
                 if ui
                     .add_enabled(conn.open, egui::Button::new("BREAK").selected(*brk))
-                    .on_hover_text("Break-Signal ein/aus")
+                    .on_hover_text(tr("Break signal on/off"))
                     .clicked()
                 {
                     *brk = !*brk;
@@ -510,29 +511,29 @@ impl Session for SerialSession {
 pub fn serial_settings_ui(ui: &mut Ui, id: &str, cfg: &mut SerialConfig, ports: &mut Vec<String>, locked: bool) {
     ui.add_enabled_ui(!locked, |ui| {
         egui::Grid::new(format!("{id}_grid")).num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            ui.label("Port");
+            ui.label(tr("Port"));
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt(format!("{id}_port"))
                     .selected_text(if cfg.port.is_empty() { "–" } else { cfg.port.as_str() })
                     .width(110.0)
                     .show_ui(ui, |ui| {
                         if ports.is_empty() {
-                            ui.label(RichText::new("Keine Ports gefunden").weak());
+                            ui.label(RichText::new(tr("No ports found")).weak());
                         }
                         for p in ports.iter() {
                             ui.selectable_value(&mut cfg.port, p.clone(), p);
                         }
                     });
-                if ui.button("🔄").on_hover_text("Portliste neu einlesen").clicked() {
+                if ui.button("🔄").on_hover_text(tr("Refresh port list")).clicked() {
                     *ports = link::list_serial_ports();
                 }
             });
             ui.end_row();
-            ui.label("Name");
+            ui.label(tr("Name"));
             ui.add(egui::TextEdit::singleline(&mut cfg.port).desired_width(140.0))
-                .on_hover_text("Portname kann auch direkt eingegeben werden");
+                .on_hover_text(tr("The port name can also be typed in directly"));
             ui.end_row();
-            ui.label("Baudrate");
+            ui.label(tr("Baud rate"));
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt(format!("{id}_baud")).selected_text(cfg.baud.to_string()).width(80.0).show_ui(
                     ui,
@@ -546,17 +547,17 @@ pub fn serial_settings_ui(ui: &mut Ui, id: &str, cfg: &mut SerialConfig, ports: 
                     },
                 );
                 ui.add(egui::DragValue::new(&mut cfg.baud).range(50..=10_000_000).speed(100.0))
-                    .on_hover_text("Eigene Baudrate");
+                    .on_hover_text(tr("Custom baud rate"));
             });
             ui.end_row();
-            ui.label("Datenbits");
+            ui.label(tr("Data bits"));
             ui.horizontal(|ui| {
                 for d in [5u8, 6, 7, 8] {
                     ui.selectable_value(&mut cfg.data_bits, d, d.to_string());
                 }
             });
             ui.end_row();
-            ui.label("Parität");
+            ui.label(tr("Parity"));
             egui::ComboBox::from_id_salt(format!("{id}_parity"))
                 .selected_text(parity_label(cfg.parity))
                 .width(110.0)
@@ -566,13 +567,13 @@ pub fn serial_settings_ui(ui: &mut Ui, id: &str, cfg: &mut SerialConfig, ports: 
                     }
                 });
             ui.end_row();
-            ui.label("Stoppbits");
+            ui.label(tr("Stop bits"));
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut cfg.stop_bits, 1, "1");
                 ui.selectable_value(&mut cfg.stop_bits, 2, "2");
             });
             ui.end_row();
-            ui.label("Handshake");
+            ui.label(tr("Handshake"));
             egui::ComboBox::from_id_salt(format!("{id}_flow")).selected_text(flow_label(cfg.flow)).width(110.0).show_ui(
                 ui,
                 |ui| {
@@ -599,7 +600,7 @@ pub struct TcpClientSaved {
 
 impl Default for TcpClientSaved {
     fn default() -> Self {
-        Self { name: "Client 1".into(), host: "127.0.0.1".into(), port: 23, term: TermSettings::default() }
+        Self { name: tr("Client 1").into(), host: "127.0.0.1".into(), port: 23, term: TermSettings::default() }
     }
 }
 
@@ -619,7 +620,7 @@ impl TcpClientSession {
             name: s.name,
             host: s.host,
             port: s.port,
-            conn: Conn::new(s.term, "Bereit. Adresse und Port eingeben und „Verbinden“ klicken."),
+            conn: Conn::new(s.term, tr(r#"Ready. Enter address and port and click "Connect"."#)),
         }
     }
     pub fn saved(&self) -> TcpClientSaved {
@@ -663,31 +664,31 @@ impl Session for TcpClientSession {
         let host = &mut self.host;
         let port = &mut self.port;
         let reqs = self.conn.frame(ui, |ui, conn| {
-            section(ui, "Gegenstelle");
+            section(ui, tr("Remote"));
             ui.add_enabled_ui(!conn.active(), |ui| {
                 egui::Grid::new("tcpc_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("Adresse");
-                    ui.add(egui::TextEdit::singleline(host).desired_width(150.0).hint_text("IP oder Hostname"));
+                    ui.label(tr("Address"));
+                    ui.add(egui::TextEdit::singleline(host).desired_width(150.0).hint_text(tr("IP or hostname")));
                     ui.end_row();
-                    ui.label("Port");
+                    ui.label(tr("Port"));
                     ui.add(egui::DragValue::new(port).range(1..=65535));
                     ui.end_row();
                 });
             });
             ui.add_space(6.0);
-            if big_button(ui, conn.active(), "Verbinden", "Trennen").clicked() {
+            if big_button(ui, conn.active(), tr("Connect"), tr("Disconnect")).clicked() {
                 if conn.active() {
                     conn.stop();
                 } else {
                     conn.start(link::open_tcp_client(ui.ctx(), host.clone(), *port));
                 }
             }
-            status_line(ui, conn.open, conn.starting, "verbunden", "getrennt");
-            section(ui, "Hinweis");
+            status_line(ui, conn.open, conn.starting, tr("connected"), tr("disconnected"));
+            section(ui, tr("Note"));
             ui.label(
-                RichText::new(
-                    "Verbindet sich als Client mit einem TCP-Server, z. B. einem Gerät, einem Telnet-Dienst oder einer Sitzung im TCP-Server-Reiter.",
-                )
+                RichText::new(tr(
+                    "Connects as a client to a TCP server, e.g. a device, a Telnet service or a session in the TCP server tab.",
+                ))
                 .weak(),
             );
         });
@@ -708,7 +709,7 @@ pub struct TcpServerSaved {
 
 impl Default for TcpServerSaved {
     fn default() -> Self {
-        Self { name: "Server 1".into(), bind: "0.0.0.0".into(), port: 2000, term: TermSettings::default() }
+        Self { name: tr("Server 1").into(), bind: "0.0.0.0".into(), port: 2000, term: TermSettings::default() }
     }
 }
 
@@ -732,7 +733,7 @@ impl TcpServerSession {
             port: s.port,
             clients: Vec::new(),
             target: None,
-            conn: Conn::new(s.term, "Bereit. Port wählen und „Starten“ klicken."),
+            conn: Conn::new(s.term, tr(r#"Ready. Choose a port and click "Start"."#)),
         }
     }
     pub fn saved(&self) -> TcpServerSaved {
@@ -771,7 +772,7 @@ impl Session for TcpServerSession {
         self.conn.term.s.mode = m;
     }
     fn summary(&self) -> String {
-        format!("{} (:{}, {} Clients)", self.name, self.port, self.clients.len())
+        trf("{} (:{}, {} clients)", &[&self.name, &self.port, &self.clients.len()])
     }
 
     fn pump(&mut self, ctx: &egui::Context) {
@@ -800,38 +801,38 @@ impl Session for TcpServerSession {
         let clients = &self.clients;
         let target = &mut self.target;
         let reqs = self.conn.frame(ui, |ui, conn| {
-            section(ui, "Server");
+            section(ui, tr("Server"));
             ui.add_enabled_ui(!conn.active(), |ui| {
                 egui::Grid::new("tcps_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("Lokale IP");
+                    ui.label(tr("Local IP"));
                     ui.add(egui::TextEdit::singleline(bind).desired_width(150.0))
-                        .on_hover_text("0.0.0.0 = auf allen Netzwerkkarten");
+                        .on_hover_text(tr("0.0.0.0 = on all network adapters"));
                     ui.end_row();
-                    ui.label("Port");
+                    ui.label(tr("Port"));
                     ui.add(egui::DragValue::new(port).range(1..=65535));
                     ui.end_row();
                 });
             });
             ui.add_space(6.0);
-            if big_button(ui, conn.active(), "Starten", "Stoppen").clicked() {
+            if big_button(ui, conn.active(), tr("Start"), tr("Stop")).clicked() {
                 if conn.active() {
                     conn.stop();
                 } else {
                     conn.start(link::open_tcp_server(ui.ctx(), bind.clone(), *port));
                 }
             }
-            status_line(ui, conn.open, conn.starting, "lauscht", "gestoppt");
-            section(ui, &format!("Clients ({})", clients.len()));
+            status_line(ui, conn.open, conn.starting, tr("listening"), tr("stopped"));
+            section(ui, &trf("Clients ({})", &[&clients.len()]));
             if clients.is_empty() {
-                ui.label(RichText::new("Noch kein Client verbunden.").weak().italics());
+                ui.label(RichText::new(tr("No client connected yet.")).weak().italics());
             } else {
-                ui.label(RichText::new("Senden an:").small());
-                ui.radio_value(target, None, "Alle Clients");
+                ui.label(RichText::new(tr("Send to:")).small());
+                ui.radio_value(target, None, tr("All clients"));
                 let mut kick = None;
                 for c in clients {
                     ui.horizontal(|ui| {
                         ui.radio_value(target, Some(c.clone()), c);
-                        if ui.small_button("✖").on_hover_text("Verbindung trennen").clicked() {
+                        if ui.small_button("✖").on_hover_text(tr("Disconnect client")).clicked() {
                             kick = Some(c.clone());
                         }
                     });
@@ -864,7 +865,7 @@ pub struct UdpSaved {
 impl Default for UdpSaved {
     fn default() -> Self {
         Self {
-            name: "UDP 1".into(),
+            name: tr("UDP 1").into(),
             bind: "0.0.0.0".into(),
             port: 2001,
             remote_host: "127.0.0.1".into(),
@@ -893,7 +894,7 @@ impl UdpSession {
         Self::from_saved(UdpSaved { name, port, ..Default::default() })
     }
     pub fn from_saved(s: UdpSaved) -> Self {
-        let mut conn = Conn::new(s.term, "Bereit. Lokalen Port öffnen, dann an Ziel senden.");
+        let mut conn = Conn::new(s.term, tr("Ready. Open the local port, then send to the target."));
         conn.needs_target = true;
         Self {
             name: s.name,
@@ -977,41 +978,41 @@ impl Session for UdpSession {
         let reply = &mut self.reply;
         let last = &self.last_sender;
         let reqs = self.conn.frame(ui, |ui, conn| {
-            section(ui, "Lokal");
+            section(ui, tr("Local"));
             ui.add_enabled_ui(!conn.active(), |ui| {
                 egui::Grid::new("udp_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                    ui.label("Lokale IP");
+                    ui.label(tr("Local IP"));
                     ui.add(egui::TextEdit::singleline(bind).desired_width(150.0));
                     ui.end_row();
-                    ui.label("Port");
-                    ui.add(egui::DragValue::new(port).range(0..=65535)).on_hover_text("0 = beliebiger freier Port");
+                    ui.label(tr("Port"));
+                    ui.add(egui::DragValue::new(port).range(0..=65535)).on_hover_text(tr("0 = any free port"));
                     ui.end_row();
                 });
-                ui.checkbox(bcast, "Broadcast erlauben");
+                ui.checkbox(bcast, tr("Allow broadcast"));
             });
             ui.add_space(6.0);
-            if big_button(ui, conn.active(), "Öffnen", "Schließen").clicked() {
+            if big_button(ui, conn.active(), tr("Open"), tr("Close")).clicked() {
                 if conn.active() {
                     conn.stop();
                 } else {
                     conn.start(link::open_udp(ui.ctx(), bind.clone(), *port, *bcast));
                 }
             }
-            status_line(ui, conn.open, conn.starting, "offen", "geschlossen");
-            section(ui, "Ziel");
+            status_line(ui, conn.open, conn.starting, tr("open"), tr("closed"));
+            section(ui, tr("Target"));
             egui::Grid::new("udp_dst").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.label("Adresse");
+                ui.label(tr("Address"));
                 ui.add_enabled(
                     !*reply,
-                    egui::TextEdit::singleline(rhost).desired_width(150.0).hint_text("IP, Name oder Broadcast"),
+                    egui::TextEdit::singleline(rhost).desired_width(150.0).hint_text(tr("IP, name or broadcast")),
                 );
                 ui.end_row();
-                ui.label("Port");
+                ui.label(tr("Port"));
                 ui.add_enabled(!*reply, egui::DragValue::new(rport).range(1..=65535));
                 ui.end_row();
             });
-            ui.checkbox(reply, "An letzten Absender antworten");
-            ui.label(RichText::new(format!("Letzter Absender: {}", last.as_deref().unwrap_or("–"))).small().weak());
+            ui.checkbox(reply, tr("Reply to last sender"));
+            ui.label(RichText::new(trf("Last sender: {}", &[&last.as_deref().unwrap_or("–")])).small().weak());
         });
         let to = self.target();
         self.conn.send(to, reqs);
@@ -1026,15 +1027,15 @@ pub fn default_port_name() -> &'static str {
 
 pub fn parity_label(p: Parity) -> &'static str {
     match p {
-        Parity::None => "keine",
-        Parity::Odd => "ungerade",
-        Parity::Even => "gerade",
+        Parity::None => tr("none"),
+        Parity::Odd => tr("odd"),
+        Parity::Even => tr("even"),
     }
 }
 
 pub fn flow_label(f: Flow) -> &'static str {
     match f {
-        Flow::None => "kein",
+        Flow::None => tr("no handshake"),
         Flow::Hardware => "RTS/CTS",
         Flow::Software => "XON/XOFF",
     }
@@ -1052,7 +1053,7 @@ pub fn status_line(ui: &mut Ui, open: bool, starting: bool, on: &str, off: &str)
     let (txt, col) = if open {
         (on, GREEN)
     } else if starting {
-        ("wird geöffnet …", ORANGE)
+        (tr("opening …"), ORANGE)
     } else {
         (off, Color32::GRAY)
     };

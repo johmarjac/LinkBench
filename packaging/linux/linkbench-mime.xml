@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
-  <mime-type type="application/x-portwerk">
-    <comment>PortWerk-Projekt</comment>
+  <mime-type type="application/x-linkbench">
+    <comment>LinkBench project</comment>
+    <comment xml:lang="de">LinkBench-Projekt</comment>
+    <glob pattern="*.linkbench"/>
     <glob pattern="*.portwerk"/>
     <sub-class-of type="application/json"/>
   </mime-type>

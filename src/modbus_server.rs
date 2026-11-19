@@ -13,6 +13,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use serde::{Deserialize, Serialize};
 
 use crate::app::section;
+use crate::i18n::{tr, trf};
 use crate::modbus::{Format, exception_text, format_regs};
 use crate::sessions::{GREEN, Session, Shared, big_button, status_line};
 use crate::terminal::{Dir, TermSettings, Terminal, View};
@@ -50,56 +51,64 @@ fn pack_bits(bits: &[bool]) -> Vec<u8> {
 
 /// Answer one request PDU. Returns the response PDU and a short description.
 pub fn handle_pdu(store: &mut Store, pdu: &[u8]) -> (Vec<u8>, String) {
-    let Some(&fc) = pdu.first() else { return (exception(0, 3), "leere Anfrage".into()) };
+    let Some(&fc) = pdu.first() else { return (exception(0, 3), tr("empty request").into()) };
     let word = |i: usize| -> Option<u16> { Some(u16::from_be_bytes([*pdu.get(i)?, *pdu.get(i + 1)?])) };
     let (Some(addr), Some(arg)) = (word(1), word(3)) else {
-        return (exception(fc, 3), format!("FC {fc}: Anfrage zu kurz"));
+        return (exception(fc, 3), trf("FC {}: request too short", &[&fc]));
     };
     let a = addr as usize;
     match fc {
         1 | 2 => {
             let qty = arg as usize;
             if !(1..=2000).contains(&qty) {
-                return (exception(fc, 3), format!("FC {fc:02}: ungültige Anzahl {qty}"));
+                return (exception(fc, 3), trf("FC {}: invalid quantity {}", &[&format!("{fc:02}"), &qty]));
             }
             if a + qty > SIZE {
-                return (exception(fc, 2), format!("FC {fc:02}: Adressbereich überschritten"));
+                return (exception(fc, 2), trf("FC {}: address range exceeded", &[&format!("{fc:02}")]));
             }
             let src = if fc == 1 { &store.coils } else { &store.discrete };
             let bytes = pack_bits(&src[a..a + qty]);
             let mut r = vec![fc, bytes.len() as u8];
             r.extend_from_slice(&bytes);
-            let what = if fc == 1 { "Coils" } else { "Eingänge" };
-            (r, format!("{what} lesen ab {addr}, {qty} Stück"))
+            let text = if fc == 1 {
+                trf("Read coils from {}, {} items", &[&addr, &qty])
+            } else {
+                trf("Read discrete inputs from {}, {} items", &[&addr, &qty])
+            };
+            (r, text)
         }
         3 | 4 => {
             let qty = arg as usize;
             if !(1..=125).contains(&qty) {
-                return (exception(fc, 3), format!("FC {fc:02}: ungültige Anzahl {qty}"));
+                return (exception(fc, 3), trf("FC {}: invalid quantity {}", &[&format!("{fc:02}"), &qty]));
             }
             if a + qty > SIZE {
-                return (exception(fc, 2), format!("FC {fc:02}: Adressbereich überschritten"));
+                return (exception(fc, 2), trf("FC {}: address range exceeded", &[&format!("{fc:02}")]));
             }
             let src = if fc == 3 { &store.holding } else { &store.input };
             let mut r = vec![fc, (qty * 2) as u8];
             for v in &src[a..a + qty] {
                 r.extend_from_slice(&v.to_be_bytes());
             }
-            let what = if fc == 3 { "Holding-Register" } else { "Input-Register" };
-            (r, format!("{what} lesen ab {addr}, {qty} Stück"))
+            let text = if fc == 3 {
+                trf("Read holding registers from {}, {} items", &[&addr, &qty])
+            } else {
+                trf("Read input registers from {}, {} items", &[&addr, &qty])
+            };
+            (r, text)
         }
         5 => {
             let on = match arg {
                 0xFF00 => true,
                 0x0000 => false,
-                _ => return (exception(fc, 3), "Coil schreiben: Wert muss FF00 oder 0000 sein".into()),
+                _ => return (exception(fc, 3), tr("Write coil: value must be FF00 or 0000").into()),
             };
             store.coils[a] = on;
-            (pdu[..5].to_vec(), format!("Coil {addr} = {}", if on { "an" } else { "aus" }))
+            (pdu[..5].to_vec(), if on { trf("Coil {} = on", &[&addr]) } else { trf("Coil {} = off", &[&addr]) })
         }
         6 => {
             store.holding[a] = arg;
-            (pdu[..5].to_vec(), format!("Register {addr} = {arg}"))
+            (pdu[..5].to_vec(), trf("Register {} = {}", &[&addr, &arg]))
         }
         15 | 16 => {
             let qty = arg as usize;
@@ -108,10 +117,10 @@ pub fn handle_pdu(store: &mut Store, pdu: &[u8]) -> (Vec<u8>, String) {
             let max = if fc == 15 { 1968 } else { 123 };
             let need = if fc == 15 { qty.div_ceil(8) } else { qty * 2 };
             if !(1..=max).contains(&qty) || count != need || data.is_none() {
-                return (exception(fc, 3), format!("FC {fc}: ungültige Anzahl oder Länge"));
+                return (exception(fc, 3), trf("FC {}: invalid quantity or length", &[&format!("{fc:02}")]));
             }
             if a + qty > SIZE {
-                return (exception(fc, 2), format!("FC {fc}: Adressbereich überschritten"));
+                return (exception(fc, 2), trf("FC {}: address range exceeded", &[&format!("{fc:02}")]));
             }
             let data = data.unwrap();
             if fc == 15 {
@@ -125,10 +134,14 @@ pub fn handle_pdu(store: &mut Store, pdu: &[u8]) -> (Vec<u8>, String) {
             }
             let mut r = vec![fc];
             r.extend_from_slice(&pdu[1..5]);
-            let what = if fc == 15 { "Coils" } else { "Register" };
-            (r, format!("{what} schreiben ab {addr}, {qty} Stück"))
+            let text = if fc == 15 {
+                trf("Write coils from {}, {} items", &[&addr, &qty])
+            } else {
+                trf("Write registers from {}, {} items", &[&addr, &qty])
+            };
+            (r, text)
         }
-        _ => (exception(fc, 1), format!("Funktion {fc} wird nicht unterstützt")),
+        _ => (exception(fc, 1), trf("Function {} is not supported", &[&fc])),
     }
 }
 
@@ -178,8 +191,8 @@ fn spawn(ctx: &egui::Context, bind: String, port: u16, unit_only: Option<u8>, st
         let listener = match TcpListener::bind((bind.trim(), port)) {
             Ok(l) => l,
             Err(e) => {
-                let hint = if port < 1024 && !cfg!(windows) { " (Ports unter 1024 brauchen Administratorrechte)" } else { "" };
-                out(SrvEvent::Error(format!("Port {port} kann nicht geöffnet werden: {e}{hint}")));
+                let hint = if port < 1024 && !cfg!(windows) { tr(" (ports below 1024 require administrator rights)") } else { "" };
+                out(SrvEvent::Error(trf("Cannot open port {}: {}{}", &[&port, &e, &hint])));
                 out(SrvEvent::Closed);
                 return;
             }
@@ -247,7 +260,7 @@ fn spawn(ctx: &egui::Context, bind: String, port: u16, unit_only: Option<u8>, st
                     let unit = frame[6];
                     if let Some(u) = unit_only {
                         if unit != u {
-                            out(SrvEvent::Request { peer: c.name.clone(), text: format!("Geräteadresse {unit} ignoriert"), ok: false });
+                            out(SrvEvent::Request { peer: c.name.clone(), text: trf("Unit ID {} ignored", &[&unit]), ok: false });
                             continue;
                         }
                     }
@@ -256,7 +269,7 @@ fn spawn(ctx: &egui::Context, bind: String, port: u16, unit_only: Option<u8>, st
                         handle_pdu(&mut st, &frame[7..])
                     };
                     let ok = resp[0] & 0x80 == 0;
-                    let text = if ok { text } else { format!("{text} → Ausnahme {:02}: {}", resp[1], exception_text(resp[1])) };
+                    let text = if ok { text } else { trf("{} → Exception {}: {}", &[&text, &format!("{:02}", resp[1]), &exception_text(resp[1])]) };
                     let mut answer = frame[..4].to_vec();
                     answer.extend_from_slice(&((resp.len() + 1) as u16).to_be_bytes());
                     answer.push(unit);
@@ -299,10 +312,10 @@ pub enum Area {
 impl Area {
     fn label(self) -> &'static str {
         match self {
-            Area::Coils => "Coils (01/05/15)",
-            Area::Discrete => "Diskrete Eingänge (02)",
-            Area::Holding => "Holding-Register (03/06/16)",
-            Area::Input => "Input-Register (04)",
+            Area::Coils => tr("Coils (01/05/15)"),
+            Area::Discrete => tr("Discrete Inputs (02)"),
+            Area::Holding => tr("Holding Registers (03/06/16)"),
+            Area::Input => tr("Input Registers (04)"),
         }
     }
     fn is_bits(self) -> bool {
@@ -342,7 +355,7 @@ pub struct ModbusServerSaved {
 impl Default for ModbusServerSaved {
     fn default() -> Self {
         Self {
-            name: "Modbus-Server 1".into(),
+            name: tr("Modbus server 1").into(),
             bind: "0.0.0.0".into(),
             port: 502,
             unit_only: false,
@@ -397,7 +410,7 @@ impl ModbusServerSession {
             st.input[*a as usize] = *v;
         }
         let mut log = Terminal::new(TermSettings { view: View::Hex, ..TermSettings::default() });
-        log.info("Bereit. Port wählen und „Starten“ klicken. Werte in der Tabelle können jederzeit geändert werden.");
+        log.info(tr("Ready. Choose a port and click “Start”. Values in the table can be changed at any time."));
         Self {
             s,
             store: Arc::new(Mutex::new(st)),
@@ -463,54 +476,54 @@ impl ModbusServerSession {
 
     fn settings_ui(&mut self, ui: &mut Ui) {
         let active = self.link.is_some();
-        section(ui, "Server");
+        section(ui, tr("Server"));
         ui.add_enabled_ui(!active, |ui| {
             egui::Grid::new("mbs_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.label("Lokale IP");
+                ui.label(tr("Local IP"));
                 ui.add(egui::TextEdit::singleline(&mut self.s.bind).desired_width(150.0))
-                    .on_hover_text("0.0.0.0 = auf allen Netzwerkkarten");
+                    .on_hover_text(tr("0.0.0.0 = on all network adapters"));
                 ui.end_row();
-                ui.label("Port");
-                ui.add(egui::DragValue::new(&mut self.s.port).range(1..=65535)).on_hover_text("Standard für Modbus TCP: 502");
+                ui.label(tr("Port"));
+                ui.add(egui::DragValue::new(&mut self.s.port).range(1..=65535)).on_hover_text(tr("Default for Modbus TCP: 502"));
                 ui.end_row();
             });
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.s.unit_only, "nur Geräteadresse");
+                ui.checkbox(&mut self.s.unit_only, tr("Unit ID only"));
                 ui.add_enabled(self.s.unit_only, egui::DragValue::new(&mut self.s.unit).range(0..=255));
             })
             .response
-            .on_hover_text("Ohne Haken beantwortet der Server jede Geräteadresse (Unit-ID).");
-            ui.checkbox(&mut self.s.log_traffic, "Datenverkehr als Hex protokollieren");
+            .on_hover_text(tr("Without the tick the server answers every unit ID."));
+            ui.checkbox(&mut self.s.log_traffic, tr("Log traffic as hex"));
         });
         ui.add_space(6.0);
-        if big_button(ui, active, "Starten", "Stoppen").clicked() {
+        if big_button(ui, active, tr("Start"), tr("Stop")).clicked() {
             if active {
                 self.link = None;
                 self.open = false;
                 self.starting = false;
                 self.clients.clear();
-                self.log.info("Server gestoppt");
+                self.log.info(tr("Server stopped"));
             } else {
                 let unit = self.s.unit_only.then_some(self.s.unit);
                 self.link = Some(spawn(ui.ctx(), self.s.bind.clone(), self.s.port, unit, self.store.clone(), self.s.log_traffic));
                 self.starting = true;
             }
         }
-        status_line(ui, self.open, self.starting, "lauscht", "gestoppt");
+        status_line(ui, self.open, self.starting, tr("listening"), tr("stopped"));
         if self.open {
-            ui.label(RichText::new(format!("Erreichbar unter {}", self.local)).small().weak());
+            ui.label(RichText::new(trf("Reachable at {}", &[&self.local])).small().weak());
         }
 
-        section(ui, &format!("Clients ({})", self.clients.len()));
+        section(ui, &trf("Clients ({})", &[&self.clients.len()]));
         if self.clients.is_empty() {
-            ui.label(RichText::new("Noch kein Client verbunden.").weak().italics());
+            ui.label(RichText::new(tr("No client connected yet.")).weak().italics());
         }
         let mut kick = None;
         for c in &self.clients {
             ui.horizontal(|ui| {
                 crate::sessions::led(ui, GREEN);
                 ui.label(c);
-                if ui.small_button("✖").on_hover_text("Verbindung trennen").clicked() {
+                if ui.small_button("✖").on_hover_text(tr("Disconnect client")).clicked() {
                     kick = Some(c.clone());
                 }
             });
@@ -519,10 +532,10 @@ impl ModbusServerSession {
             let _ = l.tx.send(SrvCmd::Kick(k));
         }
 
-        section(ui, "Statistik");
-        ui.label(format!("Anfragen: {}", self.requests));
-        ui.label(format!("davon Fehler: {}", self.errors));
-        if ui.small_button("Zähler zurücksetzen").clicked() {
+        section(ui, tr("Statistics"));
+        ui.label(trf("Requests: {}", &[&self.requests]));
+        ui.label(trf("of which errors: {}", &[&self.errors]));
+        if ui.small_button(tr("Reset counters")).clicked() {
             self.requests = 0;
             self.errors = 0;
         }
@@ -530,18 +543,18 @@ impl ModbusServerSession {
 
     fn table_ui(&mut self, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Bereich").strong());
+            ui.label(RichText::new(tr("Area")).strong());
             egui::ComboBox::from_id_salt("mbs_area").selected_text(self.s.area.label()).width(210.0).show_ui(ui, |ui| {
                 for a in [Area::Coils, Area::Discrete, Area::Holding, Area::Input] {
                     ui.selectable_value(&mut self.s.area, a, a.label());
                 }
             });
-            ui.label("ab Adresse");
+            ui.label(tr("from address"));
             ui.add(egui::DragValue::new(&mut self.s.view_start).range(0..=65535));
-            ui.label("Anzahl");
+            ui.label(tr("Count"));
             ui.add(egui::DragValue::new(&mut self.s.view_count).range(1..=2000));
             if !self.s.area.is_bits() {
-                ui.label("Anzeige");
+                ui.label(tr("Display"));
                 egui::ComboBox::from_id_salt("mbs_format").selected_text(self.s.format.label()).width(220.0).show_ui(ui, |ui| {
                     for f in Format::ALL {
                         ui.selectable_value(&mut self.s.format, f, f.label());
@@ -550,15 +563,15 @@ impl ModbusServerSession {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Simulation").strong());
-            ui.selectable_value(&mut self.s.sim, Sim::Off, "aus");
-            ui.selectable_value(&mut self.s.sim, Sim::Count, if self.s.area.is_bits() { "umschalten" } else { "hochzählen" });
-            ui.selectable_value(&mut self.s.sim, Sim::Random, "Zufall");
-            ui.label("alle");
+            ui.label(RichText::new(tr("Simulation")).strong());
+            ui.selectable_value(&mut self.s.sim, Sim::Off, tr("off"));
+            ui.selectable_value(&mut self.s.sim, Sim::Count, if self.s.area.is_bits() { tr("toggle") } else { tr("count up") });
+            ui.selectable_value(&mut self.s.sim, Sim::Random, tr("Random"));
+            ui.label(tr("every"));
             ui.add(egui::DragValue::new(&mut self.s.sim_ms).range(50..=3_600_000).suffix(" ms").speed(10.0));
-            ui.label(RichText::new("(gilt für die angezeigten Adressen)").small().weak());
+            ui.label(RichText::new(tr("(applies to the displayed addresses)")).small().weak());
             ui.separator();
-            if ui.button("Alle auf 0").on_hover_text("Angezeigte Adressen zurücksetzen").clicked() {
+            if ui.button(tr("Set all to 0")).on_hover_text(tr("Reset the displayed addresses")).clicked() {
                 let r = self.view_range();
                 let mut st = self.store.lock().unwrap();
                 match self.s.area {
@@ -586,11 +599,11 @@ impl ModbusServerSession {
                 let mut st = store.lock().unwrap();
                 let row_h = ui.spacing().interact_size.y + 4.0;
                 ui.horizontal(|ui| {
-                    ui.add_sized([80.0, 18.0], egui::Label::new(RichText::new("Adresse").strong()));
-                    ui.add_sized([140.0, 18.0], egui::Label::new(RichText::new("Wert").strong()));
+                    ui.add_sized([80.0, 18.0], egui::Label::new(RichText::new(tr("Address")).strong()));
+                    ui.add_sized([140.0, 18.0], egui::Label::new(RichText::new(tr("Value")).strong()));
                     if !area.is_bits() {
-                        ui.add_sized([90.0, 18.0], egui::Label::new(RichText::new("Hex").strong()));
-                        ui.label(RichText::new("Anzeige").strong());
+                        ui.add_sized([90.0, 18.0], egui::Label::new(RichText::new(tr("Hex")).strong()));
+                        ui.label(RichText::new(tr("Display")).strong());
                     }
                 });
                 ui.separator();
@@ -608,7 +621,7 @@ impl ModbusServerSession {
                             match area {
                                 Area::Coils | Area::Discrete => {
                                     let v = if area == Area::Coils { &mut st.coils[i] } else { &mut st.discrete[i] };
-                                    let label = if *v { "1 (an)" } else { "0 (aus)" };
+                                    let label = if *v { tr("1 (on)") } else { tr("0 (off)") };
                                     ui.checkbox(v, RichText::new(label).color(if *v { GREEN } else { Color32::GRAY }));
                                 }
                                 Area::Holding | Area::Input => {
@@ -649,7 +662,7 @@ impl Session for ModbusServerSession {
         Self::from_saved(s)
     }
     fn summary(&self) -> String {
-        format!("{} (:{}, {} Clients)", self.s.name, self.s.port, self.clients.len())
+        trf("{} (:{}, {} clients)", &[&self.s.name, &self.s.port, &self.clients.len()])
     }
 
     fn pump(&mut self, ctx: &egui::Context) {
@@ -668,17 +681,17 @@ impl Session for ModbusServerSession {
                 SrvEvent::Opened(a) => {
                     self.open = true;
                     self.starting = false;
-                    self.log.info(format!("Modbus-TCP-Server wartet auf {a}"));
+                    self.log.info(trf("Modbus TCP server waiting on {}", &[&a]));
                     self.local = a;
                 }
                 SrvEvent::Closed => closed = true,
                 SrvEvent::Error(m) => self.log.error(m),
                 SrvEvent::ClientUp(c) => {
-                    self.log.info(format!("Client verbunden: {c}"));
+                    self.log.info(trf("Client connected: {}", &[&c]));
                     self.clients.push(c);
                 }
                 SrvEvent::ClientDown(c) => {
-                    self.log.info(format!("Client getrennt: {c}"));
+                    self.log.info(trf("Client disconnected: {}", &[&c]));
                     self.clients.retain(|x| *x != c);
                 }
                 SrvEvent::Frame { peer, rx, data } => self.log.push(if rx { Dir::Rx } else { Dir::Tx }, Some(peer), data),
@@ -717,10 +730,10 @@ impl Session for ModbusServerSession {
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(10, 6)))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Anfragen & Datenverkehr").strong());
-                    ui.checkbox(&mut self.log.s.timestamps, "Zeit");
-                    ui.checkbox(&mut self.log.paused, "Pause");
-                    if ui.small_button("🗑 Leeren").clicked() {
+                    ui.label(RichText::new(tr("Requests & traffic")).strong());
+                    ui.checkbox(&mut self.log.s.timestamps, tr("Time"));
+                    ui.checkbox(&mut self.log.paused, tr("Pause"));
+                    if ui.small_button(tr("🗑 Clear")).clicked() {
                         self.log.clear();
                     }
                 });
@@ -774,7 +787,7 @@ mod tests {
         let r = Request { unit: 1, func: Func::ReadCoils, addr: 0, qty: 5, values: vec![] };
         assert_eq!(call(&mut s, 5, &r).unwrap(), Reply::Bits(vec![false, false, false, true, false]));
         let bad = Request { unit: 1, func: Func::ReadHolding, addr: 65535, qty: 2, values: vec![] };
-        assert!(call(&mut s, 6, &bad).unwrap_err().contains("Datenadresse"));
+        assert!(call(&mut s, 6, &bad).is_err());
         assert_eq!(store.lock().unwrap().holding[11], 2);
     }
 

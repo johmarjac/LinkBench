@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::section;
 use crate::codec;
+use crate::i18n::{tr, trf};
 use crate::sessions::{ACCENT, GREEN, RED, Session, Shared, big_button, status_line};
 
 const MAX_MESSAGES: usize = 5000;
@@ -44,6 +45,7 @@ fn qos_num(q: QoS) -> u8 {
 mod tls {
     use std::sync::Arc;
 
+    use crate::i18n::{tr, trf};
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
     use rustls::pki_types::pem::PemObject;
@@ -98,14 +100,14 @@ mod tls {
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         if !ca_file.trim().is_empty() {
             let certs = CertificateDer::pem_file_iter(ca_file.trim())
-                .map_err(|e| format!("CA-Datei nicht lesbar: {e}"))?;
+                .map_err(|e| trf("Cannot read CA file: {}", &[&e]))?;
             let mut n = 0;
             for c in certs {
-                roots.add(c.map_err(|e| format!("CA-Datei fehlerhaft: {e}"))?).map_err(|e| e.to_string())?;
+                roots.add(c.map_err(|e| trf("CA file is faulty: {}", &[&e]))?).map_err(|e| e.to_string())?;
                 n += 1;
             }
             if n == 0 {
-                return Err("Die CA-Datei enthält kein Zertifikat (PEM erwartet)".into());
+                return Err(tr("The CA file contains no certificate (PEM expected)").into());
             }
         }
         Ok(builder.with_root_certificates(roots).with_no_client_auth())
@@ -209,11 +211,9 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
         }
     };
     let opts = make_opts(cfg.host.trim());
-    out(MqEvent::Info(format!(
-        "Verbinde mit {}:{}{} …",
-        cfg.host.trim(),
-        cfg.port,
-        if cfg.tls { " (TLS)" } else { "" }
+    out(MqEvent::Info(trf(
+        "Connecting to {}:{}{} …",
+        &[&cfg.host.trim(), &cfg.port, &if cfg.tls { " (TLS)" } else { "" }],
     )));
     let (client, mut conn) = Client::new(opts, 256);
     let mut net = rumqttc::NetworkOptions::new();
@@ -242,7 +242,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                 }
                 if let Some(ip) = fastest_address(&host, port) {
                     if ip.to_string() != host {
-                        out(MqEvent::Info(format!("Schnellste Adresse von {host}: {ip}")));
+                        out(MqEvent::Info(trf("Fastest address for {}: {}", &[&host, &ip])));
                     }
                     conn.eventloop.mqtt_options = make_opts(&ip.to_string());
                 }
@@ -261,7 +261,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                         connected = true;
                         out(MqEvent::Connected);
                         if ack.session_present {
-                            out(MqEvent::Info("Broker hat die bisherige Sitzung fortgesetzt".into()));
+                            out(MqEvent::Info(tr("Broker resumed the previous session").into()));
                         }
                         let _ = internal.send(MqCmd::ConnAck);
                     }
@@ -275,7 +275,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                         let failed =
                             a.return_codes.iter().filter(|c| matches!(c, rumqttc::SubscribeReasonCode::Failure)).count();
                         if failed > 0 {
-                            out(MqEvent::Error(format!("Broker hat {failed} Abo(s) abgelehnt (keine Berechtigung?)")));
+                            out(MqEvent::Error(trf("Broker rejected {} subscription(s) (no permission?)", &[&failed])));
                         }
                     }
                     Ok(_) => {}
@@ -286,7 +286,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                             out(MqEvent::Disconnected(msg));
                             let _ = internal.send(MqCmd::ConnLost);
                         } else {
-                            out(MqEvent::Error(format!("Verbindung fehlgeschlagen: {msg}")));
+                            out(MqEvent::Error(trf("Connection failed: {}", &[&msg])));
                         }
                         if !auto {
                             stop.store(true, Ordering::Relaxed);
@@ -303,7 +303,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                         if stop.load(Ordering::Relaxed) {
                             break;
                         }
-                        out(MqEvent::Info("Neuer Verbindungsversuch …".into()));
+                        out(MqEvent::Info(tr("Retrying connection …").into()));
                         pick_address(&mut conn);
                     }
                 }
@@ -324,7 +324,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                         connected = true;
                         for (t, q) in &subs {
                             if let Err(e) = client.try_subscribe(t.clone(), qos(*q)) {
-                                out(MqEvent::Error(format!("Abonnieren von {t} fehlgeschlagen: {e}")));
+                                out(MqEvent::Error(trf("Subscribing to {} failed: {}", &[&t, &e])));
                             }
                         }
                     }
@@ -334,7 +334,7 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                         subs.push((t.clone(), q));
                         if connected {
                             if let Err(e) = client.try_subscribe(t.clone(), qos(q)) {
-                                out(MqEvent::Error(format!("Abonnieren von {t} fehlgeschlagen: {e}")));
+                                out(MqEvent::Error(trf("Subscribing to {} failed: {}", &[&t, &e])));
                             }
                         }
                     }
@@ -346,12 +346,12 @@ fn spawn(ctx: &egui::Context, cfg: ConnCfg) -> MqLink {
                     }
                     MqCmd::Publish { topic, payload, qos: q, retain } => {
                         if !connected {
-                            out(MqEvent::Error("Nicht verbunden – nichts veröffentlicht".into()));
+                            out(MqEvent::Error(tr("Not connected – nothing published").into()));
                             continue;
                         }
                         match client.try_publish(topic.clone(), qos(q), retain, payload.clone()) {
                             Ok(()) => out(MqEvent::Sent { topic, payload, qos: q, retain }),
-                            Err(e) => out(MqEvent::Error(format!("Veröffentlichen fehlgeschlagen: {e}"))),
+                            Err(e) => out(MqEvent::Error(trf("Publishing failed: {}", &[&e]))),
                         }
                     }
                     MqCmd::Close => break,
@@ -392,19 +392,19 @@ fn fastest_address(host: &str, port: u16) -> Option<std::net::IpAddr> {
     rx.recv_timeout(Duration::from_secs(5)).ok()
 }
 
-/// Readable German text for common connection errors.
+/// Readable text for common connection errors.
 fn describe(e: &rumqttc::ConnectionError) -> String {
     use rumqttc::ConnectionError as E;
     match e {
-        E::NetworkTimeout => "Zeitüberschreitung (Broker nicht erreichbar?)".into(),
-        E::FlushTimeout => "Zeitüberschreitung beim Senden".into(),
-        E::ConnectionRefused(code) => format!("Broker lehnt ab: {code:?} (Benutzer/Passwort oder Client-ID prüfen)"),
+        E::NetworkTimeout => tr("Timed out (broker unreachable?)").into(),
+        E::FlushTimeout => tr("Timed out while sending").into(),
+        E::ConnectionRefused(code) => trf("Broker refuses: {} (check user/password or client ID)", &[&format!("{code:?}")]),
         E::Io(io) => match io.kind() {
-            std::io::ErrorKind::ConnectionRefused => "Port geschlossen (läuft dort ein Broker?)".into(),
+            std::io::ErrorKind::ConnectionRefused => tr("Port closed (is a broker running there?)").into(),
             std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
-                "Verbindung von der Gegenstelle getrennt".into()
+                tr("Connection closed by the remote side").into()
             }
-            _ => format!("Netzwerkfehler: {io}"),
+            _ => trf("Network error: {}", &[&io]),
         },
         other => format!("{other}"),
     }
@@ -434,15 +434,15 @@ pub fn script_publish(session: &str, topic: &str, payload: Vec<u8>, q: u8, retai
         .find(|e| session.is_empty() || e.name == session)
         .ok_or_else(|| {
             if session.is_empty() {
-                "Keine MQTT-Sitzung verbunden".to_string()
+                tr("No MQTT session connected").to_string()
             } else {
-                format!("MQTT-Sitzung „{session}“ ist nicht verbunden")
+                trf("MQTT session “{}” is not connected", &[&session])
             }
         })?;
     entry
         .tx
         .send(MqCmd::Publish { topic: topic.to_string(), payload, qos: q.min(2), retain })
-        .map_err(|_| "MQTT-Sitzung nicht erreichbar".to_string())
+        .map_err(|_| tr("MQTT session unreachable").to_string())
 }
 
 // ------------------------------------------------------------------ session
@@ -498,7 +498,7 @@ pub struct MqttSaved {
 
 fn random_id() -> String {
     let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    format!("portwerk-{:06x}", (n ^ (n >> 24)) as u32 & 0xFF_FFFF)
+    format!("linkbench-{:06x}", (n ^ (n >> 24)) as u32 & 0xFF_FFFF)
 }
 
 impl Default for MqttSaved {
@@ -517,8 +517,8 @@ impl Default for MqttSaved {
             clean_session: true,
             auto_reconnect: true,
             subs: Vec::new(),
-            pub_topic: "portwerk/test".into(),
-            pub_payload: "{\"wert\": 42}".into(),
+            pub_topic: "linkbench/test".into(),
+            pub_payload: "{\"value\": 42}".into(),
             pub_qos: 0,
             pub_retain: false,
             pub_hex: false,
@@ -647,9 +647,9 @@ impl MqttSession {
             rate_count: 0,
             rate: 0,
         };
-        m.event("Bereit. Broker eintragen, Themen abonnieren und „Verbinden“ klicken.", false);
+        m.event(tr("Ready. Enter a broker, subscribe to topics and click “Connect”."), false);
         if old_default {
-            m.event("Das voreingestellte Abo „#“ (alle Themen) wurde ausgeschaltet.", false);
+            m.event(tr("The preset subscription “#” (all topics) was switched off."), false);
         }
         m
     }
@@ -701,7 +701,7 @@ impl MqttSession {
         self.link = None;
         self.connected = false;
         self.starting = false;
-        self.event("Getrennt", false);
+        self.event(tr("Disconnected"), false);
     }
 
     fn publish(&mut self) {
@@ -719,7 +719,7 @@ impl MqttSession {
         };
         let topic = self.s.pub_topic.trim().to_string();
         if topic.is_empty() || topic.contains('+') || topic.contains('#') {
-            self.event("Bitte ein Thema ohne + und # zum Veröffentlichen angeben", true);
+            self.event(tr("Enter a topic without + and # to publish"), true);
             self.s.pub_repeat = false;
             return;
         }
@@ -758,13 +758,13 @@ impl MqttSession {
         section(ui, "Broker");
         ui.add_enabled_ui(!active, |ui| {
             egui::Grid::new("mq_grid").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.label("Adresse");
+                ui.label(tr("Address"));
                 ui.add(egui::TextEdit::singleline(&mut self.s.host).desired_width(160.0).hint_text("broker.example.com"));
                 ui.end_row();
                 ui.label("Port");
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut self.s.port).range(1..=65535));
-                    if ui.checkbox(&mut self.s.tls, "TLS").on_hover_text("Verschlüsselte Verbindung, meist Port 8883").changed() {
+                    if ui.checkbox(&mut self.s.tls, "TLS").on_hover_text(tr("Encrypted connection, usually port 8883")).changed() {
                         if self.s.tls && self.s.port == 1883 {
                             self.s.port = 8883;
                         } else if !self.s.tls && self.s.port == 8883 {
@@ -773,37 +773,37 @@ impl MqttSession {
                     }
                 });
                 ui.end_row();
-                ui.label("Client-ID");
+                ui.label(tr("Client ID"));
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut self.s.client_id).desired_width(130.0));
-                    if ui.small_button("🎲").on_hover_text("Neue zufällige Client-ID").clicked() {
+                    if ui.small_button("🎲").on_hover_text(tr("New random client ID")).clicked() {
                         self.s.client_id = random_id();
                     }
                 });
                 ui.end_row();
-                ui.label("Benutzer");
+                ui.label(tr("User"));
                 ui.add(egui::TextEdit::singleline(&mut self.s.user).desired_width(160.0).hint_text("optional"));
                 ui.end_row();
-                ui.label("Passwort");
+                ui.label(tr("Password"));
                 ui.add(egui::TextEdit::singleline(&mut self.s.password).password(true).desired_width(160.0).hint_text("optional"))
-                    .on_hover_text("Wird im Projekt gespeichert. Projektdateien mit Passwort nur vertrauenswürdig weitergeben.");
+                    .on_hover_text(tr("Saved in the project. Only pass on project files containing a password to people you trust."));
                 ui.end_row();
-                ui.label("Keep-Alive");
+                ui.label(tr("Keep alive"));
                 ui.add(egui::DragValue::new(&mut self.s.keep_alive_s).range(5..=3600).suffix(" s"));
                 ui.end_row();
             });
-            ui.checkbox(&mut self.s.clean_session, "Clean Session")
-                .on_hover_text("Ohne Haken merkt sich der Broker Abos und verpasste QoS-1/2-Nachrichten");
-            ui.checkbox(&mut self.s.auto_reconnect, "Automatisch neu verbinden");
+            ui.checkbox(&mut self.s.clean_session, tr("Clean session"))
+                .on_hover_text(tr("Without the tick the broker remembers subscriptions and missed QoS 1/2 messages"));
+            ui.checkbox(&mut self.s.auto_reconnect, tr("Reconnect automatically"));
             if self.s.tls {
-                ui.checkbox(&mut self.s.insecure, "Zertifikat nicht prüfen")
-                    .on_hover_text("Für Broker mit selbst signiertem Zertifikat. Nur in vertrauenswürdigen Netzen.");
+                ui.checkbox(&mut self.s.insecure, tr("Do not verify certificate"))
+                    .on_hover_text(tr("For brokers with a self-signed certificate. Only on trusted networks."));
                 ui.horizontal(|ui| {
-                    ui.label("CA-Datei");
+                    ui.label(tr("CA file"));
                     ui.add(egui::TextEdit::singleline(&mut self.s.ca_file).desired_width(110.0).hint_text("optional (PEM)"))
-                        .on_hover_text("Eigene Zertifizierungsstelle, z. B. Firmen-CA");
+                        .on_hover_text(tr("Own certificate authority, e.g. company CA"));
                     if ui.small_button("…").clicked() {
-                        if let Some(p) = rfd::FileDialog::new().add_filter("Zertifikat", &["pem", "crt", "cer"]).pick_file() {
+                        if let Some(p) = rfd::FileDialog::new().add_filter(tr("Certificate"), &["pem", "crt", "cer"]).pick_file() {
                             self.s.ca_file = p.display().to_string();
                         }
                     }
@@ -811,19 +811,19 @@ impl MqttSession {
             }
         });
         ui.add_space(6.0);
-        if big_button(ui, active, "Verbinden", "Trennen").clicked() {
+        if big_button(ui, active, tr("Connect"), tr("Disconnect from broker")).clicked() {
             if active {
                 self.disconnect();
             } else if self.s.host.trim().is_empty() {
-                self.event("Bitte eine Broker-Adresse eintragen", true);
+                self.event(tr("Please enter a broker address"), true);
             } else {
                 self.connect(ui.ctx());
             }
         }
-        status_line(ui, self.connected, self.starting || (active && !self.connected), "verbunden", "getrennt");
-        ui.label(RichText::new(format!("Empfangen: {}   Gesendet: {}", self.received, self.sent)).small().weak());
+        status_line(ui, self.connected, self.starting || (active && !self.connected), tr("connected"), tr("disconnected"));
+        ui.label(RichText::new(trf("Received: {}   Sent: {}", &[&self.received, &self.sent])).small().weak());
 
-        section(ui, "Ereignisse");
+        section(ui, tr("Events"));
         for (t, m, err) in self.events.iter().rev().take(30) {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(t.get(..8).unwrap_or(t)).small().weak().monospace());
@@ -833,14 +833,14 @@ impl MqttSession {
     }
 
     fn subs_ui(&mut self, ui: &mut Ui) {
-        section(ui, "Abonnements");
+        section(ui, tr("Subscriptions"));
         let mut remove = None;
         let mut changed: Vec<(bool, String, u8)> = Vec::new();
         let mut confirm = None;
         for (i, s) in self.s.subs.iter_mut().enumerate() {
             ui.push_id(("sub", i), |ui| {
                 ui.horizontal(|ui| {
-                    if ui.checkbox(&mut s.on, "").on_hover_text("Abo aktiv").changed() {
+                    if ui.checkbox(&mut s.on, "").on_hover_text(tr("Subscription active")).changed() {
                         if s.on && is_broad(&s.topic) {
                             s.on = false;
                             confirm = Some((s.topic.clone(), s.qos, Some(i)));
@@ -850,7 +850,7 @@ impl MqttSession {
                     }
                     ui.add(egui::Label::new(RichText::new(&s.topic).monospace()).truncate());
                     ui.label(RichText::new(format!("Q{}", s.qos)).small().weak());
-                    if ui.small_button("✖").on_hover_text("Abo entfernen").clicked() {
+                    if ui.small_button("✖").on_hover_text(tr("Remove subscription")).clicked() {
                         remove = Some(i);
                     }
                 });
@@ -866,7 +866,7 @@ impl MqttSession {
         ui.horizontal(|ui| {
             let r = ui.add(
                 egui::TextEdit::singleline(&mut self.new_sub)
-                    .hint_text("z. B. sensor/+/temp")
+                    .hint_text(tr("e.g. sensor/+/temp"))
                     .desired_width((ui.available_width() - 110.0).max(80.0))
                     .font(egui::TextStyle::Monospace),
             );
@@ -876,7 +876,7 @@ impl MqttSession {
                 }
             });
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if (ui.button("➕").on_hover_text("Abonnieren").clicked() || enter) && !self.new_sub.trim().is_empty() {
+            if (ui.button("➕").on_hover_text(tr("Subscribe")).clicked() || enter) && !self.new_sub.trim().is_empty() {
                 let t = self.new_sub.trim().to_string();
                 if is_broad(&t) {
                     self.confirm_broad = Some((t, self.new_sub_qos, None));
@@ -888,28 +888,28 @@ impl MqttSession {
                 self.new_sub.clear();
             }
         });
-        ui.label(RichText::new("+ = eine Ebene, # = alles darunter").small().weak());
+        ui.label(RichText::new(tr("+ = one level, # = everything below")).small().weak());
         if self.s.subs.is_empty() {
-            ui.label(RichText::new("Noch kein Abo – empfangen wird nur, was hier steht.").small().italics().weak());
+            ui.label(RichText::new(tr("No subscription yet – only what is listed here is received.")).small().italics().weak());
         }
 
         // confirmation for "#" and similar
         if let Some((t, q, idx)) = self.confirm_broad.clone() {
             let mut decision = None;
-            egui::Window::new("Alle Themen abonnieren?")
+            egui::Window::new(tr("Subscribe to all topics?"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ui.ctx(), |ui| {
-                    ui.label(format!("„{t}“ abonniert jedes Thema auf diesem Broker."));
-                    ui.label("Auf öffentlichen Brokern sind das oft tausende Nachrichten pro Sekunde.");
-                    ui.label(RichText::new("Besser gezielt abonnieren, z. B. „haus/#“ oder „sensor/+/temp“.").weak());
+                    ui.label(trf("“{}” subscribes to every topic on this broker.", &[&t]));
+                    ui.label(tr("On public brokers this is often thousands of messages per second."));
+                    ui.label(RichText::new(tr("Better to subscribe selectively, e.g. “home/#” or “sensor/+/temp”.")).weak());
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Abbrechen").clicked() {
+                        if ui.button(tr("Cancel")).clicked() {
                             decision = Some(false);
                         }
-                        if ui.button(RichText::new("Trotzdem abonnieren").color(RED)).clicked() {
+                        if ui.button(RichText::new(tr("Subscribe anyway")).color(RED)).clicked() {
                             decision = Some(true);
                         }
                     });
@@ -939,11 +939,11 @@ impl MqttSession {
         ui.add_space(6.0);
         let mut clear = false;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("Themen ({})", self.topics.len())).strong().size(14.0));
+            ui.label(RichText::new(trf("Topics ({})", &[&self.topics.len()])).strong().size(14.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .add_enabled(!self.topics.is_empty(), egui::Button::new("🗑 Themen löschen"))
-                    .on_hover_text("Themenübersicht leeren (die Nachrichtenliste bleibt)")
+                    .add_enabled(!self.topics.is_empty(), egui::Button::new(tr("🗑 Clear topics")))
+                    .on_hover_text(tr("Clear the topic overview (the message list stays)"))
                     .clicked()
                 {
                     clear = true;
@@ -955,7 +955,7 @@ impl MqttSession {
             self.clear_topics();
         }
         if self.topics.is_empty() {
-            ui.label(RichText::new("Noch keine Nachrichten empfangen.").weak().italics());
+            ui.label(RichText::new(tr("No messages received yet.")).weak().italics());
         }
         let mut set_filter = None;
         egui::ScrollArea::vertical().id_salt("mq_topics").auto_shrink([false, false]).show(ui, |ui| {
@@ -965,7 +965,7 @@ impl MqttSession {
                         egui::Button::selectable(self.s.filter == *t, RichText::new(t).monospace().color(ACCENT))
                             .truncate(),
                     )
-                    .on_hover_text(format!("{} Nachrichten, zuletzt {}\nKlick: nur dieses Thema anzeigen", st.count, st.time));
+                    .on_hover_text(trf("{} messages, last at {}\nClick: show only this topic", &[&st.count, &st.time]));
                 if r.clicked() {
                     set_filter = Some(t.clone());
                 }
@@ -983,11 +983,11 @@ impl MqttSession {
 
     fn publish_ui(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Veröffentlichen").strong());
+            ui.label(RichText::new(tr("Publish")).strong());
             ui.add(
                 egui::TextEdit::singleline(&mut self.s.pub_topic)
                     .font(egui::TextStyle::Monospace)
-                    .hint_text("Thema")
+                    .hint_text(tr("Topic"))
                     .desired_width(260.0),
             );
             egui::ComboBox::from_id_salt("mq_pubqos").selected_text(format!("QoS {}", self.s.pub_qos)).width(64.0).show_ui(ui, |ui| {
@@ -995,9 +995,9 @@ impl MqttSession {
                     ui.selectable_value(&mut self.s.pub_qos, q, format!("QoS {q}"));
                 }
             });
-            ui.checkbox(&mut self.s.pub_retain, "Retain").on_hover_text("Broker behält die Nachricht als letzten Wert");
-            ui.checkbox(&mut self.s.pub_hex, "HEX").on_hover_text("Inhalt als Hex-Bytes, z. B. 01 02 FF");
-            if !self.s.pub_hex && ui.small_button("JSON formatieren").clicked() {
+            ui.checkbox(&mut self.s.pub_retain, "Retain").on_hover_text(tr("Broker keeps the message as the last value"));
+            ui.checkbox(&mut self.s.pub_hex, "HEX").on_hover_text(tr("Payload as hex bytes, e.g. 01 02 FF"));
+            if !self.s.pub_hex && ui.small_button(tr("Format JSON")).clicked() {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&self.s.pub_payload) {
                     self.s.pub_payload = serde_json::to_string_pretty(&v).unwrap_or_default();
                 }
@@ -1014,18 +1014,18 @@ impl MqttSession {
                 if ui
                     .add_enabled(
                         self.connected,
-                        egui::Button::new(RichText::new("▶ Senden").color(Color32::WHITE).strong()).fill(ACCENT),
+                        egui::Button::new(RichText::new(tr("▶ Send")).color(Color32::WHITE).strong()).fill(ACCENT),
                     )
                     .clicked()
                 {
                     self.publish();
                 }
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.s.pub_repeat, "alle").on_hover_text("Automatisch wiederholt senden");
+                    ui.checkbox(&mut self.s.pub_repeat, tr("every")).on_hover_text(tr("Send repeatedly and automatically"));
                     ui.add(egui::DragValue::new(&mut self.s.pub_interval_ms).range(50..=3_600_000).suffix(" ms").speed(10.0));
                 });
                 if !self.connected {
-                    ui.label(RichText::new("erst verbinden").small().weak().italics());
+                    ui.label(RichText::new(tr("connect first")).small().weak().italics());
                 }
             });
         });
@@ -1033,26 +1033,26 @@ impl MqttSession {
 
     fn messages_ui(&mut self, ui: &mut Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Nachrichten").strong());
+            ui.label(RichText::new(tr("Messages")).strong());
             ui.selectable_value(&mut self.s.view, MsgView::Text, "Text");
             ui.selectable_value(&mut self.s.view, MsgView::Hex, "Hex");
             ui.selectable_value(&mut self.s.view, MsgView::Json, "JSON");
             ui.separator();
             ui.label("Filter");
-            ui.add(egui::TextEdit::singleline(&mut self.s.filter).hint_text("Thema, + und # erlaubt").desired_width(170.0));
-            if !self.s.filter.is_empty() && ui.small_button("✖").on_hover_text("Filter löschen").clicked() {
+            ui.add(egui::TextEdit::singleline(&mut self.s.filter).hint_text(tr("Topic, + and # allowed")).desired_width(170.0));
+            if !self.s.filter.is_empty() && ui.small_button("✖").on_hover_text(tr("Clear filter")).clicked() {
                 self.s.filter.clear();
             }
-            ui.checkbox(&mut self.s.show_sent, "Gesendete");
+            ui.checkbox(&mut self.s.show_sent, tr("Sent"));
             ui.separator();
-            let pause_label = if self.paused { "▶ Weiter" } else { "⏸ Pause" };
+            let pause_label = if self.paused { tr("▶ Resume") } else { "⏸ Pause" };
             ui.toggle_value(&mut self.paused, pause_label);
-            if ui.button("🗑 Leeren").clicked() {
+            if ui.button(tr("🗑 Clear")).clicked() {
                 self.messages.clear();
                 self.topics.clear();
                 self.selected = None;
             }
-            if ui.button("💾 Speichern").clicked() {
+            if ui.button(tr("💾 Save")).clicked() {
                 if let Some(p) = rfd::FileDialog::new().add_filter("Text", &["txt", "log"]).set_file_name("mqtt.txt").save_file() {
                     let text: String = self
                         .messages
@@ -1060,23 +1060,23 @@ impl MqttSession {
                         .map(|m| format!("{} {} {} [QoS {}{}] {}\n", m.time, if m.sent { "▶" } else { "◀" }, m.topic, m.qos, if m.retain { ", retain" } else { "" }, String::from_utf8_lossy(&m.payload)))
                         .collect();
                     if let Err(e) = std::fs::write(&p, text) {
-                        self.event(format!("Speichern fehlgeschlagen: {e}"), true);
+                        self.event(trf("Saving failed: {}", &[&e]), true);
                     }
                 }
             }
             let logging = self.log_file.is_some();
             if ui
-                .add(egui::Button::new(if logging { "⏺ Mitschrift läuft" } else { "⏺ Mitschreiben" }).selected(logging))
-                .on_hover_text("Alle Nachrichten laufend in eine Datei schreiben")
+                .add(egui::Button::new(if logging { tr("⏺ Logging to file") } else { tr("⏺ Log to file") }).selected(logging))
+                .on_hover_text(tr("Continuously write all messages to a file"))
                 .clicked()
             {
                 if logging {
                     self.log_file = None;
-                    self.event("Mitschrift beendet", false);
+                    self.event(tr("Logging stopped"), false);
                 } else if let Some(p) = rfd::FileDialog::new().set_file_name("mqtt.log").save_file() {
                     match std::fs::OpenOptions::new().create(true).append(true).open(&p) {
                         Ok(f) => self.log_file = Some((p.display().to_string(), f)),
-                        Err(e) => self.event(format!("Datei nicht beschreibbar: {e}"), true),
+                        Err(e) => self.event(trf("File not writable: {}", &[&e]), true),
                     }
                 }
             }
@@ -1087,9 +1087,9 @@ impl MqttSession {
             egui::Frame::new().fill(Color32::from_rgb(255, 236, 200)).corner_radius(4.0).inner_margin(6.0).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     let brown = Color32::from_rgb(140, 70, 0);
-                    ui.label(RichText::new(format!("⚠ Sehr viele Nachrichten: {} pro Sekunde.", self.rate)).color(brown).strong());
-                    ui.label(RichText::new("Abos eingrenzen oder:").color(brown));
-                    if ui.button("Alle Abos ausschalten").clicked() {
+                    ui.label(RichText::new(trf("⚠ Very many messages: {} per second.", &[&self.rate])).color(brown).strong());
+                    ui.label(RichText::new(tr("Narrow down subscriptions or:")).color(brown));
+                    if ui.button(tr("Switch off all subscriptions")).clicked() {
                         stop = true;
                     }
                 });
@@ -1103,7 +1103,7 @@ impl MqttSession {
                         }
                     }
                 }
-                self.event("Alle Abos ausgeschaltet", false);
+                self.event(tr("All subscriptions switched off"), false);
             }
         }
         let filter = self.s.filter.trim().to_string();
@@ -1121,13 +1121,15 @@ impl MqttSession {
         if let Some(sel) = self.selected.and_then(|i| self.messages.get(i)) {
             let full = format_payload(&sel.payload, self.s.view, true);
             let topic = sel.topic.clone();
-            let meta = format!(
-                "{} · {} · QoS {}{} · {} Byte",
-                sel.time,
-                if sel.sent { "gesendet" } else { "empfangen" },
-                sel.qos,
-                if sel.retain { " · retain" } else { "" },
-                sel.payload.len()
+            let meta = trf(
+                "{} · {} · QoS {}{} · {} bytes",
+                &[
+                    &sel.time,
+                    &if sel.sent { tr("sent") } else { tr("received") },
+                    &sel.qos,
+                    &if sel.retain { " · retain" } else { "" },
+                    &sel.payload.len(),
+                ],
             );
             let raw = String::from_utf8_lossy(&sel.payload).into_owned();
             egui::Panel::bottom("mq_detail")
@@ -1139,10 +1141,10 @@ impl MqttSession {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&topic).monospace().strong().color(ACCENT));
                         ui.label(RichText::new(meta).small().weak());
-                        if ui.small_button("📋 Kopieren").clicked() {
+                        if ui.small_button(tr("📋 Copy")).clicked() {
                             ui.ctx().copy_text(full.clone());
                         }
-                        if ui.small_button("Zum Veröffentlichen übernehmen").clicked() {
+                        if ui.small_button(tr("Use for publishing")).clicked() {
                             take_over = Some((topic.clone(), raw.clone()));
                         }
                     });
@@ -1168,7 +1170,7 @@ impl MqttSession {
             .show(ui, |ui| {
                 ui.set_min_size(ui.available_size());
                 if idx.is_empty() {
-                    ui.label(RichText::new(if self.messages.is_empty() { "Noch keine Nachrichten." } else { "Keine Nachricht passt zum Filter." }).weak().italics());
+                    ui.label(RichText::new(if self.messages.is_empty() { tr("No messages yet.") } else { tr("No message matches the filter.") }).weak().italics());
                     return;
                 }
                 let row_h = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
@@ -1244,11 +1246,11 @@ impl Session for MqttSession {
                     MqEvent::Connected => {
                         self.connected = true;
                         self.starting = false;
-                        self.event(format!("Verbunden mit {}:{}", self.s.host.trim(), self.s.port), false);
+                        self.event(trf("Connected to {}:{}", &[&self.s.host.trim(), &self.s.port]), false);
                     }
                     MqEvent::Disconnected(m) => {
                         self.connected = false;
-                        self.event(format!("Verbindung verloren: {m}"), true);
+                        self.event(trf("Connection to the broker lost: {}", &[&m]), true);
                     }
                     MqEvent::Closed => closed = true,
                     MqEvent::Info(m) => self.event(m, false),

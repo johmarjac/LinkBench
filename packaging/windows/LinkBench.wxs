@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI installer for LinkBench (WiX Toolset v5).
+  Built by .github/workflows/release.yml:
+    wix build -arch x64 -d Version=1.2.3 -d BinPath=path\to\linkbench.exe LinkBench.wxs -o LinkBench.msi
+
+  The UpgradeCode is the one the app had as PortWerk, so installing LinkBench replaces an
+  installed PortWerk instead of putting a second copy next to it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="LinkBench"
+           Manufacturer="LinkBench"
+           Version="$(var.Version)"
+           UpgradeCode="6E0C2F5B-7F43-4C1B-9A57-2D8E5A3B9C41"
+           Scope="perMachine"
+           Language="1033"
+           Codepage="1252">
+    <SummaryInformation Description="LinkBench – workbench for serial, TCP, UDP, Modbus, MQTT and REST" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of LinkBench is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="LinkBench">
+        <Component Id="MainExecutable">
+          <File Id="LinkBenchExe" Source="$(var.BinPath)" Name="LinkBench.exe" KeyPath="yes" />
+          <!-- *.linkbench project files (and the older *.portwerk ones) open with LinkBench on double click -->
+          <ProgId Id="LinkBench.Project" Description="LinkBench project" Icon="LinkBenchExe" IconIndex="0" Advertise="no">
+            <Extension Id="linkbench" ContentType="application/x-linkbench">
+              <Verb Id="open" Command="Open" TargetFile="LinkBenchExe" Argument="&quot;%1&quot;" />
+            </Extension>
+            <Extension Id="portwerk" ContentType="application/x-linkbench">
+              <Verb Id="open" Command="Open" TargetFile="LinkBenchExe" Argument="&quot;%1&quot;" />
+            </Extension>
+          </ProgId>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="LinkBenchStartMenu"
+                  Name="LinkBench"
+                  Description="Workbench for serial, TCP, UDP, Modbus, MQTT and REST"
+                  Target="[INSTALLFOLDER]LinkBench.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKLM" Key="Software\LinkBench" Name="StartMenuShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="LinkBench">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

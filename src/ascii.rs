@@ -23,7 +23,7 @@ impl Default for AsciiTable {
 pub fn char_name(b: u8) -> String {
     match b {
         0..=31 => CONTROL[b as usize].to_string(),
-        32 => "Leerzeichen".into(),
+        32 => crate::i18n::tr("Space").into(),
         127 => "DEL".into(),
         128..=159 => "–".into(),
         _ => char::from_u32(b as u32).map(|c| c.to_string()).unwrap_or_default(),
@@ -35,7 +35,8 @@ impl AsciiTable {
     pub fn show(&mut self, ctx: &egui::Context) -> Option<u8> {
         let mut picked = None;
         let mut open = self.open;
-        egui::Window::new("ASCII-Tabelle")
+        egui::Window::new(crate::i18n::tr("ASCII table"))
+            .id(egui::Id::unique("ascii_table_window"))
             .open(&mut open)
             .default_size([430.0, 520.0])
             .default_pos([460.0, 70.0])
@@ -43,11 +44,11 @@ impl AsciiTable {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("🔍");
-                    ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Suchen: A, 0x41, 65, CR …").desired_width(170.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text(crate::i18n::tr("Search: A, 0x41, 65, CR …")).desired_width(170.0));
                     ui.checkbox(&mut self.extended, "128–255");
                 });
                 ui.label(
-                    RichText::new("Klick auf eine Zeile fügt das Zeichen in die zuletzt benutzte Sendezeile ein.")
+                    RichText::new(crate::i18n::tr("Clicking a row inserts the character into the most recently used send line."))
                         .small()
                         .weak(),
                 );
@@ -56,7 +57,7 @@ impl AsciiTable {
                 let max: u16 = if self.extended { 255 } else { 127 };
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     egui::Grid::new("ascii_grid").num_columns(5).striped(true).spacing([14.0, 3.0]).show(ui, |ui| {
-                        for h in ["Dez", "Hex", "Bin", "Zeichen", ""] {
+                        for h in [crate::i18n::tr("Dec"), crate::i18n::tr("Hex"), crate::i18n::tr("Bin"), crate::i18n::tr("Char"), ""] {
                             ui.label(RichText::new(h).strong());
                         }
                         ui.end_row();
@@ -80,7 +81,7 @@ impl AsciiTable {
                             clicked |= ui.add(egui::Button::new(RichText::new(format!("{b:08b}")).monospace().weak()).frame(false)).clicked();
                             let shown = if b < 32 || b == 127 { RichText::new(name).italics() } else { RichText::new(name).monospace().strong() };
                             clicked |= ui.add(egui::Button::new(shown).frame(false)).clicked();
-                            if ui.small_button("einfügen").clicked() {
+                            if ui.small_button(crate::i18n::tr("insert")).clicked() {
                                 clicked = true;
                             }
                             if clicked {

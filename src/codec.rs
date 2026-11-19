@@ -16,7 +16,7 @@ pub fn parse_hex(input: &str) -> Result<Vec<u8>, String> {
                 digits.push(last);
             }
         } else {
-            return Err(format!("Ungültiges Hex-Zeichen: '{c}'"));
+            return Err(crate::i18n::trf("Invalid hex character: '{}'", &[&c]));
         }
     }
     if digits.len() % 2 == 1 {
@@ -55,7 +55,7 @@ pub fn parse_text(input: &str) -> Result<Vec<u8>, String> {
                     out.push(u8::from_str_radix(&h, 16).unwrap());
                     i += 3;
                 } else {
-                    return Err(format!("Nach '$' werden zwei Hex-Ziffern erwartet (Stelle {})", i + 1));
+                    return Err(crate::i18n::trf("Two hex digits expected after '$' (position {})", &[&(i + 1)]));
                 }
             }
             '#' => {
@@ -71,11 +71,11 @@ pub fn parse_text(input: &str) -> Result<Vec<u8>, String> {
                     .take_while(|c| c.is_ascii_digit())
                     .collect();
                 if d.is_empty() {
-                    return Err(format!("Nach '#' wird eine Dezimalzahl erwartet (Stelle {})", i + 1));
+                    return Err(crate::i18n::trf("A decimal number expected after '#' (position {})", &[&(i + 1)]));
                 }
                 let v: u32 = d.parse().unwrap();
                 if v > 255 {
-                    return Err(format!("#{d} ist größer als 255"));
+                    return Err(crate::i18n::trf("#{} is greater than 255", &[&d]));
                 }
                 out.push(v as u8);
                 i += 1 + d.len();

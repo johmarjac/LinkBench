@@ -1879,6 +1879,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
 
 [[package]]
+name = "linkbench"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui",
+ "image",
+ "mlua",
+ "rfd",
+ "rumqttc",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serialport",
+ "sys-locale",
+ "ureq",
+ "webpki-roots",
+ "winit",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2779,26 +2800,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "portwerk"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "eframe",
- "egui",
- "image",
- "mlua",
- "rfd",
- "rumqttc",
- "rustls",
- "serde",
- "serde_json",
- "serialport",
- "ureq",
- "webpki-roots",
- "winit",
 ]
 
 [[package]]

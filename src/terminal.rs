@@ -10,6 +10,7 @@ use eframe::egui::{self, Color32, FontId, RichText, text::LayoutJob, TextFormat}
 use serde::{Deserialize, Serialize};
 
 use crate::codec;
+use crate::i18n::{tr, trf};
 use crate::script::{self, ScriptMsg, ScriptRun};
 
 mod send_ui;
@@ -43,10 +44,10 @@ pub enum View {
 impl View {
     fn label(self) -> &'static str {
         match self {
-            View::Text => "Text",
-            View::Hex => "Hex",
-            View::Both => "Hex + Text",
-            View::Dec => "Dezimal",
+            View::Text => tr("Text"),
+            View::Hex => tr("Hex"),
+            View::Both => tr("Hex + Text"),
+            View::Dec => tr("Decimal"),
         }
     }
 }
@@ -62,7 +63,7 @@ pub enum LineEnd {
 impl LineEnd {
     fn label(self) -> &'static str {
         match self {
-            LineEnd::None => "kein Zeilenende",
+            LineEnd::None => tr("no line ending"),
             LineEnd::Cr => "+ CR",
             LineEnd::Lf => "+ LF",
             LineEnd::CrLf => "+ CR LF",
@@ -137,10 +138,10 @@ impl Default for TermSettings {
             show_peer: true,
             echo: false,
             line_end: LineEnd::None,
-            rows: vec![SendRow::new("Hallo$0D$0A", false), SendRow::new("01 03 00 00 00 0A", true), SendRow::new("", false)],
+            rows: vec![SendRow::new(tr("Hello$0D$0A"), false), SendRow::new("01 03 00 00 00 0A", true), SendRow::new("", false)],
             mode: SendMode::Lines,
             seq_loops: 0,
-            script: script::EXAMPLES[0].1.to_string(),
+            script: script::examples()[0].1.to_string(),
         }
     }
 }
@@ -174,7 +175,7 @@ impl Terminal {
     pub fn new(mut s: TermSettings) -> Self {
         // scripts saved by an earlier version were Rhai (// comments); start fresh with Lua
         if s.script.trim_start().starts_with("//") {
-            s.script = script::EXAMPLES[0].1.to_string();
+            s.script = script::examples()[0].1.to_string();
         }
         Self {
             s,
@@ -231,7 +232,7 @@ impl Terminal {
             d.extend_from_slice(line_end.bytes());
         }
         if d.is_empty() {
-            return Err("Nichts zu senden – Zeile ist leer".into());
+            return Err(tr("Nothing to send – line is empty").into());
         }
         Ok(d)
     }
@@ -271,12 +272,12 @@ impl Terminal {
             let mut keep = true;
             if !connected {
                 keep = false;
-                self.info("Schleife beendet (Verbindung geschlossen)");
+                self.info(tr("Loop ended (connection closed)"));
             } else if now >= seq.next_at {
                 let rows: Vec<usize> = (0..self.s.rows.len()).filter(|&i| self.s.rows[i].in_seq).collect();
                 if rows.is_empty() {
                     keep = false;
-                    self.error("Keine Zeile für die Schleife ausgewählt");
+                    self.error(tr("No line selected for the loop"));
                 } else {
                     let ri = rows[seq.idx.min(rows.len() - 1)];
                     let row = &self.s.rows[ri];
@@ -291,13 +292,13 @@ impl Terminal {
                                 seq.round += 1;
                                 if self.s.seq_loops > 0 && seq.round >= self.s.seq_loops {
                                     keep = false;
-                                    self.info(format!("Schleife fertig ({} Durchläufe)", seq.round));
+                                    self.info(trf("Loop finished ({} runs)", &[&seq.round]));
                                 }
                             }
                         }
                         Err(e) => {
                             keep = false;
-                            self.error(format!("Schleife gestoppt – Zeile {}: {e}", ri + 1));
+                            self.error(trf("Loop stopped – line {}: {}", &[&(ri + 1), &e]));
                         }
                     }
                 }
@@ -322,10 +323,10 @@ impl Terminal {
                         if connected {
                             out.push(SendRequest { data: d });
                         } else {
-                            msgs.push((Dir::Error, "Skript: nicht verbunden – nichts gesendet".to_string()));
+                            msgs.push((Dir::Error, tr("Script: not connected – nothing sent").to_string()));
                         }
                     }
-                    ScriptMsg::Log(s) => msgs.push((Dir::Info, format!("Skript: {s}"))),
+                    ScriptMsg::Log(s) => msgs.push((Dir::Info, trf("Script: {}", &[&s]))),
                     ScriptMsg::Error(s) => msgs.push((Dir::Error, s)),
                     ScriptMsg::Done => done = true,
                 }
@@ -428,56 +429,56 @@ impl Terminal {
                         ui.selectable_value(&mut self.s.view, v, v.label());
                     }
                 });
-            ui.checkbox(&mut self.s.timestamps, "Zeit")
-                .on_hover_text("Uhrzeit vor jedem Eintrag anzeigen");
-            ui.checkbox(&mut self.s.show_special, "Steuerzeichen")
-                .on_hover_text("Nicht druckbare Zeichen als {0D} anzeigen");
-            ui.checkbox(&mut self.s.show_tx, "Gesendetes")
-                .on_hover_text("Auch gesendete Daten im Fenster zeigen");
-            ui.checkbox(&mut self.s.echo, "Echo")
-                .on_hover_text("Empfangene Daten sofort an den Absender zurückschicken");
+            ui.checkbox(&mut self.s.timestamps, tr("Timestamp"))
+                .on_hover_text(tr("Show the time before every entry"));
+            ui.checkbox(&mut self.s.show_special, tr("Control chars"))
+                .on_hover_text(tr("Show non-printable characters as {0D}"));
+            ui.checkbox(&mut self.s.show_tx, tr("Sent data"))
+                .on_hover_text(tr("Also show sent data in the window"));
+            ui.checkbox(&mut self.s.echo, tr("Echo"))
+                .on_hover_text(tr("Send received data straight back to the sender"));
             ui.separator();
-            let pause_label = if self.paused { "▶ Weiter" } else { "⏸ Pause" };
+            let pause_label = if self.paused { tr("▶ Resume") } else { tr("⏸ Pause") };
             ui.toggle_value(&mut self.paused, pause_label)
-                .on_hover_text("Anzeige anhalten (Mitschrift in Datei läuft weiter)");
-            if ui.button("🗑 Leeren").clicked() {
+                .on_hover_text(tr("Freeze the display (logging to file continues)"));
+            if ui.button(tr("🗑 Clear")).clicked() {
                 self.clear();
             }
-            if ui.button("💾 Speichern").on_hover_text("Inhalt des Fensters als Textdatei speichern").clicked() {
+            if ui.button(tr("💾 Save log")).on_hover_text(tr("Save the window contents as a text file")).clicked() {
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Text", &["txt", "log"])
-                    .set_file_name("mitschnitt.txt")
+                    .add_filter(tr("Text"), &["txt", "log"])
+                    .set_file_name(tr("capture.txt"))
                     .save_file()
                 {
                     match std::fs::write(&path, self.export_text()) {
-                        Ok(()) => self.info(format!("Gespeichert: {}", path.display())),
-                        Err(e) => self.error(format!("Speichern fehlgeschlagen: {e}")),
+                        Ok(()) => self.info(trf("Saved: {}", &[&path.display()])),
+                        Err(e) => self.error(trf("Saving failed: {}", &[&e])),
                     }
                 }
             }
             let logging = self.log_file.is_some();
-            let label = if logging { "⏺ Mitschrift läuft" } else { "⏺ Mitschreiben" };
+            let label = if logging { tr("⏺ Logging") } else { tr("⏺ Log to file") };
             let btn = ui.add(egui::Button::new(label).selected(logging));
             let btn = match &self.log_file {
-                Some((p, _)) => btn.on_hover_text(format!("Schreibt nach {p}. Klick beendet.")),
-                None => btn.on_hover_text("Alles laufend in eine Datei mitschreiben"),
+                Some((p, _)) => btn.on_hover_text(trf("Writing to {}. Click to stop.", &[p])),
+                None => btn.on_hover_text(tr("Continuously write everything to a file")),
             };
             if btn.clicked() {
                 if logging {
                     let (p, _) = self.log_file.take().unwrap();
-                    self.info(format!("Mitschrift beendet: {p}"));
+                    self.info(trf("Logging stopped: {}", &[&p]));
                 } else if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Log", &["log", "txt"])
-                    .set_file_name("mitschrift.log")
+                    .add_filter(tr("Log"), &["log", "txt"])
+                    .set_file_name(tr("capture.log"))
                     .save_file()
                 {
                     match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
                         Ok(f) => {
                             let p = path.display().to_string();
                             self.log_file = Some((p.clone(), f));
-                            self.info(format!("Mitschrift nach {p}"));
+                            self.info(trf("Logging to {}", &[&p]));
                         }
-                        Err(e) => self.error(format!("Datei nicht beschreibbar: {e}")),
+                        Err(e) => self.error(trf("File not writable: {}", &[&e])),
                     }
                 }
             }
@@ -559,7 +560,7 @@ impl Terminal {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         if self.entries.is_empty() {
-                            ui.label(RichText::new("Noch keine Daten.").color(c_info).italics());
+                            ui.label(RichText::new(tr("No data yet.")).color(c_info).italics());
                         } else {
                             ui.add(egui::Label::new(job).selectable(true));
                         }

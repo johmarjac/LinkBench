@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use mlua::{HookTriggers, Lua, MultiValue, VmState};
 
 use crate::codec;
+use crate::i18n::tr;
 
 pub enum ScriptMsg {
     Send(Vec<u8>),
@@ -61,7 +62,8 @@ impl RxState {
     }
 }
 
-const STOPPED: &str = "Skript gestoppt";
+/// Internal marker of the error that stops a script (never shown; the log line uses `tr`).
+const STOPPED: &str = "script stopped";
 
 fn stopped() -> mlua::Error {
     mlua::Error::runtime(STOPPED)
@@ -283,20 +285,20 @@ pub fn run(ctx: eframe::egui::Context, src: String) -> ScriptRun {
         let rx = Rc::new(RefCell::new(RxState { rx: feed_rx, buf: Vec::new() }));
         let lua = Lua::new();
         if let Err(e) = setup(&lua, emit.clone(), stop.clone(), rx) {
-            emit(ScriptMsg::Error(format!("Skript konnte nicht vorbereitet werden: {e}")));
+            emit(ScriptMsg::Error(crate::i18n::trf("Script could not be prepared: {}", &[&e])));
             emit(ScriptMsg::Done);
             return;
         }
-        emit(ScriptMsg::Log("Skript gestartet".into()));
-        match lua.load(&src).set_name("Skript").exec() {
-            Ok(()) => emit(ScriptMsg::Log("Skript beendet".into())),
+        emit(ScriptMsg::Log(tr("Script started").into()));
+        match lua.load(&src).set_name(tr("Script")).exec() {
+            Ok(()) => emit(ScriptMsg::Log(tr("Script finished").into())),
             Err(e) => {
                 let msg = e.to_string();
                 if stop.load(Ordering::Relaxed) || msg.contains(STOPPED) {
-                    emit(ScriptMsg::Log(STOPPED.into()));
+                    emit(ScriptMsg::Log(tr("Script stopped").into()));
                 } else {
                     let first = msg.lines().next().unwrap_or(&msg).replace("runtime error: ", "");
-                    emit(ScriptMsg::Error(format!("Skriptfehler: {first}")));
+                    emit(ScriptMsg::Error(crate::i18n::trf("Script error: {}", &[&first])));
                 }
             }
         }
@@ -305,116 +307,122 @@ pub fn run(ctx: eframe::egui::Context, src: String) -> ScriptRun {
     ScriptRun { stop, feed: feed_tx, out: out_rx }
 }
 
-pub const EXAMPLES: &[(&str, &str)] = &[
-    (
-        "Schleife: 10 Nachrichten",
-        r#"-- Schickt 10 nummerierte Nachrichten im Abstand von 500 ms
+/// The example scripts as (name, code) in the current language.
+pub fn examples() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            tr("Loop: 10 messages"),
+            tr(r#"-- Sends 10 numbered messages 500 ms apart
 for i = 1, 10 do
-    send("Nachricht " .. i .. "\r\n")
+    send("Message " .. i .. "\r\n")
     wait(500)
 end
-"#,
-    ),
-    (
-        "Frage / Antwort (AT-Befehl)",
-        r#"-- Sendet einen Befehl und wartet bis zu 2 s auf "OK"
+"#),
+        ),
+        (
+            tr("Question / answer (AT command)"),
+            tr(r#"-- Sends a command and waits up to 2 s for "OK"
 clear_rx()
 send("AT\r")
 if wait_for("OK", 2000) then
-    log("Gerät hat mit OK geantwortet")
+    log("Device answered with OK")
 else
-    log("Keine Antwort innerhalb von 2 s")
+    log("No answer within 2 s")
 end
-"#,
-    ),
-    (
-        "Modbus RTU mit CRC",
-        r#"-- Holding-Register lesen: Gerät 1, ab Adresse 0, 10 Register
+"#),
+        ),
+        (
+            tr("Modbus RTU with CRC"),
+            tr(r#"-- Read holding registers: device 1, starting at address 0, 10 registers
 local req = from_hex("01 03 00 00 00 0A")
 local crc = crc16_modbus(req)
-req = req .. string.char(crc & 0xFF, (crc >> 8) & 0xFF)  -- CRC low byte zuerst
+req = req .. string.char(crc & 0xFF, (crc >> 8) & 0xFF)  -- CRC low byte first
 send_bytes(req)
-local antwort = recv(1000)
-if #antwort == 0 then
-    log("Keine Antwort")
+local answer = recv(1000)
+if #answer == 0 then
+    log("No answer")
 else
-    log("Antwort: " .. to_hex(antwort))
+    log("Answer: " .. to_hex(answer))
 end
-"#,
-    ),
-    (
-        "Automatischer Antworter",
-        r#"-- Antwortet auf jedes "PING" mit "PONG" – läuft bis Stopp
+"#),
+        ),
+        (
+            tr("Automatic responder"),
+            tr(r#"-- Answers every "PING" with "PONG" – runs until Stop
 while true do
     if wait_for("PING", 1000) then
         send("PONG\r\n")
-        log("PING beantwortet")
+        log("PING answered")
     end
 end
-"#,
-    ),
-    (
-        "Messwert an REST-API weiterleiten",
-        r#"-- Liest Antworten vom Gerät und schickt jede Zeile als JSON an eine API
+"#),
+        ),
+        (
+            tr("Forward measurement to REST API"),
+            tr(r#"-- Reads replies from the device and sends each line as JSON to an API
 local url = "https://httpbin.org/post"
 while true do
-    local zeile = recv(2000)
-    if #zeile > 0 then
-        local json = '{"wert": "' .. zeile:gsub("[\r\n\"]", "") .. '"}'
-        local status, antwort = http_post(url, json)
-        log("API-Antwort: " .. status)
+    local line = recv(2000)
+    if #line > 0 then
+        local json = '{"value": "' .. line:gsub("[\r\n\"]", "") .. '"}'
+        local status, answer = http_post(url, json)
+        log("API response: " .. status)
     end
 end
-"#,
-    ),
-    (
-        "Messwert an MQTT weiterleiten",
-        r#"-- Leitet jede empfangene Zeile als JSON an MQTT weiter
--- (vorher im Reiter MQTT eine Sitzung verbinden)
+"#),
+        ),
+        (
+            tr("Forward measurement to MQTT"),
+            tr(r#"-- Forwards every received line to MQTT as JSON
+-- (connect a session in the MQTT tab first)
 while true do
-    local zeile = recv(2000)
-    if #zeile > 0 then
-        local wert = zeile:gsub("[\r\n\"]", "")
-        mqtt_publish("portwerk/messwert", '{"wert": "' .. wert .. '"}')
-        log("an MQTT gesendet: " .. wert)
+    local line = recv(2000)
+    if #line > 0 then
+        local value = line:gsub("[\r\n\"]", "")
+        mqtt_publish("linkbench/measurement", '{"value": "' .. value .. '"}')
+        log("sent to MQTT: " .. value)
     end
 end
-"#,
-    ),
-    (
-        "Endlos-Schleife mit Zähler",
-        r#"-- Sendet jede Sekunde AA + Zähler-Byte – läuft bis Stopp
+"#),
+        ),
+        (
+            tr("Endless loop with counter"),
+            tr(r#"-- Sends AA + a counter byte every second – runs until Stop
 local n = 0
 while true do
     send_bytes(string.char(0xAA, n % 256))
     n = n + 1
     wait(1000)
 end
-"#,
-    ),
-];
+"#),
+        ),
+    ]
+}
 
-pub const HELP: &str = "Sprache: Lua 5.4  (Kommentar: -- …, Text verbinden: ..)
-Befehle:
-  send(\"Text\\r\\n\")      Text senden ($XX und #DDD erlaubt)
-  send_hex(\"01 02 FF\")  Bytes als Hex senden
-  send_bytes(daten)      Bytes roh senden (Lua-String)
-  wait(ms)               warten
-  recv(ms)               Empfangenes holen (wartet max. ms)
-  recv_hex(ms)           … als Hex-Text
-  wait_for(\"OK\", ms)    true, wenn \"OK\" rechtzeitig kam
-  clear_rx()             Empfangspuffer leeren
-  log(…) / print(…)      Meldung ins Fenster schreiben
-  now_ms()               Millisekunden seit Skriptstart
-MQTT (über eine verbundene MQTT-Sitzung):
-  mqtt_publish(\"thema\", \"inhalt\" [, qos, retain, \"Sitzungsname\"])
-HTTP / REST (liefert Status und Antwort):
-  local st, txt = http_get(\"https://…\")
-  local st, txt = http_post(\"https://…\", '{\"wert\":1}')   (JSON)
-  http_request(\"PUT\", url, body, \"text/plain\")
-Helfer:
-  from_hex(\"01 02\"), to_hex(daten), string.char(1, 2), #daten
-  crc16_modbus(d), crc16_ccitt(d), crc32(d), crc8(d), sum8(d), xor8(d)";
+/// The help text for the script commands, in the current language.
+pub fn help() -> &'static str {
+    tr(r#"Language: Lua 5.4  (comment: -- ..., join text: ..)
+Commands:
+  send("text\r\n")       send text ($XX and #DDD allowed)
+  send_hex("01 02 FF")   send bytes given as hex
+  send_bytes(data)       send raw bytes (Lua string)
+  wait(ms)               wait
+  recv(ms)               fetch received data (waits at most ms)
+  recv_hex(ms)           ... as hex text
+  wait_for("OK", ms)     true if "OK" arrived in time
+  clear_rx()             clear the receive buffer
+  log(...) / print(...)  write a message to the window
+  now_ms()               milliseconds since script start
+MQTT (through a connected MQTT session):
+  mqtt_publish("topic", "payload" [, qos, retain, "session name"])
+HTTP / REST (returns status and response):
+  local st, txt = http_get("https://...")
+  local st, txt = http_post("https://...", '{"value":1}')   (JSON)
+  http_request("PUT", url, body, "text/plain")
+Helpers:
+  from_hex("01 02"), to_hex(data), string.char(1, 2), #data
+  crc16_modbus(d), crc16_ccitt(d), crc32(d), crc8(d), sum8(d), xor8(d)"#)
+}
 
 #[cfg(test)]
 mod tests {
@@ -470,8 +478,14 @@ mod tests {
     #[test]
     fn examples_compile() {
         let lua = Lua::new();
-        for (name, src) in EXAMPLES {
-            lua.load(*src).into_function().unwrap_or_else(|e| panic!("{name}: {e}"));
+        // tests run at the same time, so the language isn't switched: the German texts are
+        // looked up in the table directly
+        let all = examples();
+        assert_eq!(all.len(), 7);
+        for (name, src) in all {
+            for (lang, code) in [("en", src), ("de", crate::i18n::german(src))] {
+                lua.load(code).into_function().unwrap_or_else(|e| panic!("{lang} {name}: {e}"));
+            }
         }
     }
 }

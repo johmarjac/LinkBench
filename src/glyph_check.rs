@@ -26,7 +26,7 @@ mod tests {
         let mut view = fonts.with_pixels_per_point(1.0);
         let prop: std::collections::BTreeSet<char> = view.characters(&FontFamily::Proportional).keys().copied().collect();
         let mono: std::collections::BTreeSet<char> = view.characters(&FontFamily::Monospace).keys().copied().collect();
-        assert!(prop.contains(&'A') && prop.len() > 500, "Schriftliste leer?");
+        assert!(prop.contains(&'A') && prop.len() > 500, "font list empty?");
         let mut missing = Vec::new();
         for (file, src) in SOURCES {
             for (n, line) in src.lines().enumerate() {
@@ -40,6 +40,6 @@ mod tests {
                 }
             }
         }
-        assert!(missing.is_empty(), "Zeichen fehlen in der Schrift:\n{}", missing.join("\n"));
+        assert!(missing.is_empty(), "Characters missing from the font:\n{}", missing.join("\n"));
     }
 }

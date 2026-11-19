@@ -96,9 +96,9 @@ where
 fn resolve(host: &str, port: u16) -> Result<SocketAddr, String> {
     (host.trim(), port)
         .to_socket_addrs()
-        .map_err(|e| format!("Adresse '{host}' nicht auflösbar: {e}"))?
+        .map_err(|e| crate::i18n::trf("Cannot resolve address '{}': {}", &[&host, &e]))?
         .next()
-        .ok_or_else(|| format!("Adresse '{host}' nicht auflösbar"))
+        .ok_or_else(|| crate::i18n::trf("Cannot resolve address '{}'", &[&host]))
 }
 
 // ---------------------------------------------------------------- serial
@@ -163,7 +163,7 @@ pub fn open_serial(ctx: &eframe::egui::Context, cfg: SerialConfig, dtr: bool, rt
         let mut port = match builder.open() {
             Ok(p) => p,
             Err(e) => {
-                out.emit(Event::Error(format!("{} konnte nicht geöffnet werden: {e}", cfg.port)));
+                out.emit(Event::Error(crate::i18n::trf("{} could not be opened: {}", &[&cfg.port, &e])));
                 out.emit(Event::Closed);
                 return;
             }
@@ -171,17 +171,19 @@ pub fn open_serial(ctx: &eframe::egui::Context, cfg: SerialConfig, dtr: bool, rt
         let _ = port.write_data_terminal_ready(dtr);
         let _ = port.write_request_to_send(rts);
         out.emit(Event::Opened);
-        out.emit(Event::Info(format!(
-            "{} geöffnet ({} Baud, {}{}{})",
-            cfg.port,
-            cfg.baud,
-            cfg.data_bits,
-            match cfg.parity {
-                Parity::None => "N",
-                Parity::Odd => "O",
-                Parity::Even => "E",
-            },
-            cfg.stop_bits
+        out.emit(Event::Info(crate::i18n::trf(
+            "{} opened ({} baud, {}{}{})",
+            &[
+                &cfg.port,
+                &cfg.baud,
+                &cfg.data_bits,
+                &match cfg.parity {
+                    Parity::None => "N",
+                    Parity::Odd => "O",
+                    Parity::Even => "E",
+                },
+                &cfg.stop_bits,
+            ],
         )));
         let mut buf = [0u8; 4096];
         let mut last_lines = None;
@@ -191,7 +193,7 @@ pub fn open_serial(ctx: &eframe::egui::Context, cfg: SerialConfig, dtr: bool, rt
                 match cmds.try_recv() {
                     Ok(Cmd::Send { data, .. }) => match port.write_all(&data) {
                         Ok(()) => out.emit(Event::Tx { peer: None, data }),
-                        Err(e) => out.emit(Event::Error(format!("Senden fehlgeschlagen: {e}"))),
+                        Err(e) => out.emit(Event::Error(crate::i18n::trf("Send failed: {}", &[&e]))),
                     },
                     Ok(Cmd::SetDtr(v)) => {
                         let _ = port.write_data_terminal_ready(v);
@@ -212,7 +214,7 @@ pub fn open_serial(ctx: &eframe::egui::Context, cfg: SerialConfig, dtr: bool, rt
                 Ok(n) => out.emit(Event::Rx { peer: None, data: buf[..n].to_vec() }),
                 Err(e) if e.kind() == ErrorKind::TimedOut => {}
                 Err(e) => {
-                    out.emit(Event::Error(format!("Lesefehler: {e}")));
+                    out.emit(Event::Error(crate::i18n::trf("Read error: {}", &[&e])));
                     break;
                 }
             }
@@ -230,7 +232,7 @@ pub fn open_serial(ctx: &eframe::egui::Context, cfg: SerialConfig, dtr: bool, rt
                 }
             }
         }
-        out.emit(Event::Info(format!("{} geschlossen", cfg.port)));
+        out.emit(Event::Info(crate::i18n::trf("{} closed", &[&cfg.port])));
         out.emit(Event::Closed);
     })
 }
@@ -247,11 +249,11 @@ pub fn open_tcp_client(ctx: &eframe::egui::Context, host: String, port: u16) -> 
                 return;
             }
         };
-        out.emit(Event::Info(format!("Verbinde mit {addr} …")));
+        out.emit(Event::Info(crate::i18n::trf("Connecting to {} …", &[&addr])));
         let mut s = match TcpStream::connect_timeout(&addr, Duration::from_secs(5)) {
             Ok(s) => s,
             Err(e) => {
-                out.emit(Event::Error(format!("Verbindung zu {addr} fehlgeschlagen: {e}")));
+                out.emit(Event::Error(crate::i18n::trf("Connection to {} failed: {}", &[&addr, &e])));
                 out.emit(Event::Closed);
                 return;
             }
@@ -259,14 +261,14 @@ pub fn open_tcp_client(ctx: &eframe::egui::Context, host: String, port: u16) -> 
         let _ = s.set_nodelay(true);
         let _ = s.set_read_timeout(Some(Duration::from_millis(15)));
         out.emit(Event::Opened);
-        out.emit(Event::Info(format!("Verbunden mit {addr}")));
+        out.emit(Event::Info(crate::i18n::trf("Connected to {}", &[&addr])));
         let mut buf = [0u8; 8192];
         'outer: loop {
             loop {
                 match cmds.try_recv() {
                     Ok(Cmd::Send { data, .. }) => match s.write_all(&data) {
                         Ok(()) => out.emit(Event::Tx { peer: None, data }),
-                        Err(e) => out.emit(Event::Error(format!("Senden fehlgeschlagen: {e}"))),
+                        Err(e) => out.emit(Event::Error(crate::i18n::trf("Send failed: {}", &[&e]))),
                     },
                     Ok(Cmd::Close) | Err(TryRecvError::Disconnected) => break 'outer,
                     Ok(_) => {}
@@ -275,19 +277,19 @@ pub fn open_tcp_client(ctx: &eframe::egui::Context, host: String, port: u16) -> 
             }
             match s.read(&mut buf) {
                 Ok(0) => {
-                    out.emit(Event::Info("Gegenstelle hat die Verbindung beendet".into()));
+                    out.emit(Event::Info(crate::i18n::tr("Remote end closed the connection").into()));
                     break;
                 }
                 Ok(n) => out.emit(Event::Rx { peer: None, data: buf[..n].to_vec() }),
                 Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
                 Err(e) => {
-                    out.emit(Event::Error(format!("Verbindung unterbrochen: {e}")));
+                    out.emit(Event::Error(crate::i18n::trf("Connection lost: {}", &[&e])));
                     break;
                 }
             }
         }
         let _ = s.shutdown(std::net::Shutdown::Both);
-        out.emit(Event::Info("Getrennt".into()));
+        out.emit(Event::Info(crate::i18n::tr("Disconnected").into()));
         out.emit(Event::Closed);
     })
 }
@@ -299,14 +301,14 @@ pub fn open_tcp_server(ctx: &eframe::egui::Context, bind: String, port: u16) -> 
         let listener = match TcpListener::bind((bind.trim(), port)) {
             Ok(l) => l,
             Err(e) => {
-                out.emit(Event::Error(format!("Port {port} kann nicht geöffnet werden: {e}")));
+                out.emit(Event::Error(crate::i18n::trf("Port {} cannot be opened: {}", &[&port, &e])));
                 out.emit(Event::Closed);
                 return;
             }
         };
         let _ = listener.set_nonblocking(true);
         out.emit(Event::Opened);
-        out.emit(Event::Info(format!("Server wartet auf {}:{port}", bind.trim())));
+        out.emit(Event::Info(crate::i18n::trf("Server listening on {}:{}", &[&bind.trim(), &port])));
         let mut clients: Vec<(String, TcpStream)> = Vec::new();
         let mut buf = [0u8; 8192];
         'outer: loop {
@@ -318,13 +320,13 @@ pub fn open_tcp_server(ctx: &eframe::egui::Context, bind: String, port: u16) -> 
                         let _ = s.set_nodelay(true);
                         let name = a.to_string();
                         out.emit(Event::ClientUp(name.clone()));
-                        out.emit(Event::Info(format!("Client verbunden: {name}")));
+                        out.emit(Event::Info(crate::i18n::trf("Client connected: {}", &[&name])));
                         clients.push((name, s));
                         busy = true;
                     }
                     Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                     Err(e) => {
-                        out.emit(Event::Error(format!("Accept-Fehler: {e}")));
+                        out.emit(Event::Error(crate::i18n::trf("Accept error: {}", &[&e])));
                         break;
                     }
                 }
@@ -336,12 +338,12 @@ pub fn open_tcp_server(ctx: &eframe::egui::Context, bind: String, port: u16) -> 
                             if to.as_ref().is_none_or(|t| t == name) {
                                 match s.write_all(&data) {
                                     Ok(()) => out.emit(Event::Tx { peer: Some(name.clone()), data: data.clone() }),
-                                    Err(e) => out.emit(Event::Error(format!("Senden an {name} fehlgeschlagen: {e}"))),
+                                    Err(e) => out.emit(Event::Error(crate::i18n::trf("Send to {} failed: {}", &[&name, &e]))),
                                 }
                             }
                         }
                         if clients.is_empty() {
-                            out.emit(Event::Error("Kein Client verbunden".into()));
+                            out.emit(Event::Error(crate::i18n::tr("No client connected").into()));
                         }
                     }
                     Ok(Cmd::Kick(name)) => {
@@ -354,7 +356,7 @@ pub fn open_tcp_server(ctx: &eframe::egui::Context, bind: String, port: u16) -> 
                             }
                         });
                         out.emit(Event::ClientDown(name.clone()));
-                        out.emit(Event::Info(format!("Client getrennt: {name}")));
+                        out.emit(Event::Info(crate::i18n::trf("Client disconnected: {}", &[&name])));
                     }
                     Ok(Cmd::Close) | Err(TryRecvError::Disconnected) => break 'outer,
                     Ok(_) => {}
@@ -376,7 +378,7 @@ pub fn open_tcp_server(ctx: &eframe::egui::Context, bind: String, port: u16) -> 
             for i in gone.into_iter().rev() {
                 let (name, _) = clients.remove(i);
                 out.emit(Event::ClientDown(name.clone()));
-                out.emit(Event::Info(format!("Client hat getrennt: {name}")));
+                out.emit(Event::Info(crate::i18n::trf("Client closed the connection: {}", &[&name])));
             }
             if !busy {
                 thread::sleep(Duration::from_millis(5));
@@ -385,7 +387,7 @@ pub fn open_tcp_server(ctx: &eframe::egui::Context, bind: String, port: u16) -> 
         for (_, s) in &clients {
             let _ = s.shutdown(std::net::Shutdown::Both);
         }
-        out.emit(Event::Info("Server gestoppt".into()));
+        out.emit(Event::Info(crate::i18n::tr("Server stopped").into()));
         out.emit(Event::Closed);
     })
 }
@@ -397,7 +399,7 @@ pub fn open_udp(ctx: &eframe::egui::Context, bind: String, port: u16, broadcast:
         let sock = match UdpSocket::bind((bind.trim(), port)) {
             Ok(s) => s,
             Err(e) => {
-                out.emit(Event::Error(format!("UDP-Port {port} kann nicht geöffnet werden: {e}")));
+                out.emit(Event::Error(crate::i18n::trf("UDP port {} cannot be opened: {}", &[&port, &e])));
                 out.emit(Event::Closed);
                 return;
             }
@@ -406,7 +408,7 @@ pub fn open_udp(ctx: &eframe::egui::Context, bind: String, port: u16, broadcast:
         let _ = sock.set_read_timeout(Some(Duration::from_millis(15)));
         let local = sock.local_addr().map(|a| a.to_string()).unwrap_or_default();
         out.emit(Event::Opened);
-        out.emit(Event::Info(format!("UDP lauscht auf {local}")));
+        out.emit(Event::Info(crate::i18n::trf("UDP listening on {}", &[&local])));
         let mut buf = vec![0u8; 65536];
         'outer: loop {
             loop {
@@ -416,11 +418,11 @@ pub fn open_udp(ctx: &eframe::egui::Context, bind: String, port: u16, broadcast:
                         let res = target
                             .to_socket_addrs()
                             .map_err(|e| e.to_string())
-                            .and_then(|mut a| a.next().ok_or_else(|| "keine Adresse".to_string()))
+                            .and_then(|mut a| a.next().ok_or_else(|| crate::i18n::tr("no address").to_string()))
                             .and_then(|a| sock.send_to(&data, a).map_err(|e| e.to_string()));
                         match res {
                             Ok(_) => out.emit(Event::Tx { peer: Some(target), data }),
-                            Err(e) => out.emit(Event::Error(format!("Senden an '{target}' fehlgeschlagen: {e}"))),
+                            Err(e) => out.emit(Event::Error(crate::i18n::trf("Send to '{}' failed: {}", &[&target, &e]))),
                         }
                     }
                     Ok(Cmd::Close) | Err(TryRecvError::Disconnected) => break 'outer,
@@ -434,12 +436,12 @@ pub fn open_udp(ctx: &eframe::egui::Context, bind: String, port: u16, broadcast:
                 // Windows reports ICMP "port unreachable" from earlier sends as a read error
                 Err(e) if e.kind() == ErrorKind::ConnectionReset => {}
                 Err(e) => {
-                    out.emit(Event::Error(format!("UDP-Fehler: {e}")));
+                    out.emit(Event::Error(crate::i18n::trf("UDP error: {}", &[&e])));
                     thread::sleep(Duration::from_millis(50));
                 }
             }
         }
-        out.emit(Event::Info("UDP geschlossen".into()));
+        out.emit(Event::Info(crate::i18n::tr("UDP closed").into()));
         out.emit(Event::Closed);
     })
 }

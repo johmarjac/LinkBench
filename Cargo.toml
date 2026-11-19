@@ -1,9 +1,9 @@
 [package]
-name = "portwerk"
-version = "0.1.0"
+name = "linkbench"
+version = "0.2.0"
 edition = "2024"
-description = "Entwickler-Terminal für Seriell, TCP, UDP, Modbus, MQTT und REST"
-repository = "https://github.com/johmarjac/PortWerk"
+description = "Developer workbench for serial, TCP, UDP, Modbus, MQTT and REST (English and German)"
+repository = "https://github.com/johmarjac/LinkBench"
 
 [dependencies]
 eframe = { version = "0.37", features = ["persistence"] }
@@ -19,6 +19,7 @@ egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 webpki-roots = "1"
 rumqttc = { version = "0.25", default-features = false, features = ["use-rustls-no-provider"] }
+sys-locale = "0.3.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = "0.30"
@@ -31,18 +32,18 @@ strip = true
 
 # Linux .deb package (built by the release workflow with cargo-deb)
 [package.metadata.deb]
-name = "portwerk"
-maintainer = "PortWerk <noreply@github.com>"
+name = "linkbench"
+maintainer = "LinkBench <noreply@github.com>"
 section = "devel"
 priority = "optional"
 extended-description = """\
-Serielle Schnittstellen, TCP-Client, TCP-Server und UDP in einem Fenster. \
-Anzeige als Text oder Hex, Sendezeilen, Schleifen, Lua-Skripte, ASCII-Tabelle \
-und Prüfsummen-Werkzeuge."""
+Serial ports, TCP client, TCP server, UDP, Modbus, MQTT and REST in one window. \
+Text or hex display, send lines, loops, Lua scripts, ASCII table \
+and checksum tools. Interface in English and German."""
 depends = "$auto"
 assets = [
-    ["target/release/portwerk", "usr/bin/", "755"],
-    ["packaging/linux/portwerk.desktop", "usr/share/applications/", "644"],
-    ["packaging/linux/portwerk-mime.xml", "usr/share/mime/packages/portwerk.xml", "644"],
-    ["README.md", "usr/share/doc/portwerk/README.md", "644"],
+    ["target/release/linkbench", "usr/bin/", "755"],
+    ["packaging/linux/linkbench.desktop", "usr/share/applications/", "644"],
+    ["packaging/linux/linkbench-mime.xml", "usr/share/mime/packages/linkbench.xml", "644"],
+    ["README.md", "usr/share/doc/linkbench/README.md", "644"],
 ]

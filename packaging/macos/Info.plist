@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>PortWerk</string>
+    <string>LinkBench</string>
     <key>CFBundleDisplayName</key>
-    <string>PortWerk</string>
+    <string>LinkBench</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.portwerk</string>
+    <string>io.github.linkbench</string>
     <key>CFBundleExecutable</key>
-    <string>PortWerk</string>
+    <string>LinkBench</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
@@ -20,6 +20,13 @@
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>de</string>
+    </array>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
 </dict>

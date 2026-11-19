@@ -9,6 +9,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use serde::{Deserialize, Serialize};
 
 use crate::app::section;
+use crate::i18n::{tr, trf};
 
 pub const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -83,7 +84,7 @@ pub struct RestRequest {
 impl Default for RestRequest {
     fn default() -> Self {
         Self {
-            name: "Neue Anfrage".into(),
+            name: tr("New request").into(),
             method: "GET".into(),
             url: String::new(),
             params: Vec::new(),
@@ -117,18 +118,18 @@ impl Default for RestSettings {
         Self {
             requests: vec![
                 RestRequest {
-                    name: "Beispiel GET".into(),
+                    name: tr("Example GET").into(),
                     url: "{{baseUrl}}/get".into(),
-                    params: vec![Kv::new("suche", "hallo welt")],
+                    params: vec![Kv::new(tr("query"), tr("hello world"))],
                     headers: vec![Kv::new("Accept", "application/json")],
                     ..Default::default()
                 },
                 RestRequest {
-                    name: "Beispiel POST (JSON)".into(),
+                    name: tr("Example POST (JSON)").into(),
                     method: "POST".into(),
                     url: "{{baseUrl}}/post".into(),
                     body_kind: BodyKind::Json,
-                    body: "{\n  \"geraet\": \"Sensor 1\",\n  \"wert\": 42\n}".into(),
+                    body: tr("{\n  \"device\": \"Sensor 1\",\n  \"value\": 42\n}").into(),
                     ..Default::default()
                 },
             ],
@@ -252,8 +253,8 @@ fn execute(p: Prepared, timeout_s: u64, follow: bool, insecure: bool) -> Result<
     }
     let start = Instant::now();
     let res = match p.body {
-        Some(body) => agent.run(b.body(body).map_err(|e| format!("Ungültige Anfrage: {e}"))?),
-        None => agent.run(b.body(()).map_err(|e| format!("Ungültige Anfrage: {e}"))?),
+        Some(body) => agent.run(b.body(body).map_err(|e| trf("Invalid request: {}", &[&e]))?),
+        None => agent.run(b.body(()).map_err(|e| trf("Invalid request: {}", &[&e]))?),
     };
     let mut resp = res.map_err(|e| e.to_string())?;
     let status = resp.status();
@@ -267,7 +268,7 @@ fn execute(p: Prepared, timeout_s: u64, follow: bool, insecure: bool) -> Result<
         .with_config()
         .limit(100 * 1024 * 1024)
         .read_to_vec()
-        .map_err(|e| format!("Antwort konnte nicht gelesen werden: {e}"))?;
+        .map_err(|e| trf("Could not read response: {}", &[&e]))?;
     Ok(RestResponse {
         status: status.as_u16(),
         reason: status.canonical_reason().unwrap_or("").to_string(),
@@ -293,10 +294,10 @@ fn kv_table(ui: &mut Ui, id: &str, rows: &mut Vec<Kv>, key_hint: &str, val_hint:
     for (i, r) in rows.iter_mut().enumerate() {
         ui.push_id((id, i), |ui| {
             ui.horizontal(|ui| {
-                ui.checkbox(&mut r.on, "").on_hover_text("Aktiv");
+                ui.checkbox(&mut r.on, "").on_hover_text(tr("Active"));
                 ui.add(egui::TextEdit::singleline(&mut r.key).hint_text(key_hint).desired_width(200.0));
                 ui.add(egui::TextEdit::singleline(&mut r.value).hint_text(val_hint).desired_width(val_w));
-                if ui.small_button("✖").on_hover_text("Entfernen").clicked() {
+                if ui.small_button("✖").on_hover_text(tr("Remove")).clicked() {
                     remove = Some(i);
                 }
             });
@@ -305,7 +306,7 @@ fn kv_table(ui: &mut Ui, id: &str, rows: &mut Vec<Kv>, key_hint: &str, val_hint:
     if let Some(i) = remove {
         rows.remove(i);
     }
-    if ui.button("➕ Hinzufügen").clicked() {
+    if ui.button(tr("➕ Add")).clicked() {
         rows.push(Kv::default());
     }
 }
@@ -347,7 +348,7 @@ impl RestClient {
         let vars = &self.s.vars;
         let mut url = subst(r.url.trim(), vars);
         if url.is_empty() {
-            return Err("Bitte eine URL eingeben".into());
+            return Err(tr("Please enter a URL").into());
         }
         if !url.contains("://") {
             url = format!("http://{url}");
@@ -462,7 +463,7 @@ impl RestClient {
                         cut -= 1;
                     }
                     s.truncate(cut);
-                    s.push_str("\n… (gekürzt, vollständig über „Speichern“)");
+                    s.push_str(tr("\n… (truncated, use “Save” for the full body)"));
                 }
                 s
             }
@@ -477,7 +478,7 @@ impl RestClient {
             let time = chrono::Local::now().format("%H:%M:%S").to_string();
             let (result, ok) = match &res {
                 Ok(r) => (format!("{} · {} ms", r.status, r.ms), r.status < 400),
-                Err(_) => ("Fehler".to_string(), false),
+                Err(_) => (tr("Error").to_string(), false),
             };
             self.history.insert(0, HistoryEntry { time, method: method.clone(), url: url.clone(), result, ok });
             self.history.truncate(100);
@@ -486,7 +487,7 @@ impl RestClient {
             self.rebuild_view();
         } else if started.elapsed() > Duration::from_secs(self.s.timeout_s + 5) {
             self.pending = None;
-            self.response = Some(Err("Zeitüberschreitung".into()));
+            self.response = Some(Err(tr("Timed out").into()));
             self.rebuild_view();
         }
     }
@@ -526,19 +527,19 @@ impl RestClient {
 
     fn side_ui(&mut self, ui: &mut Ui) {
         ui.set_max_width(ui.available_width());
-        section(ui, "Anfragen");
+        section(ui, tr("Requests"));
         ui.horizontal(|ui| {
-            if ui.button("➕ Neu").clicked() {
+            if ui.button(tr("➕ New")).clicked() {
                 self.s.requests.push(RestRequest::default());
                 self.s.selected = self.s.requests.len() - 1;
             }
-            if ui.button("🗐").on_hover_text("Duplizieren").clicked() {
+            if ui.button("🗐").on_hover_text(tr("Duplicate")).clicked() {
                 let mut c = self.current().clone();
-                c.name.push_str(" (Kopie)");
+                c.name.push_str(&format!(" {}", tr("(copy)")));
                 self.s.requests.insert(self.s.selected + 1, c);
                 self.s.selected += 1;
             }
-            if ui.add_enabled(self.s.requests.len() > 1, egui::Button::new("🗑")).on_hover_text("Löschen").clicked() {
+            if ui.add_enabled(self.s.requests.len() > 1, egui::Button::new("🗑")).on_hover_text(tr("Delete")).clicked() {
                 self.s.requests.remove(self.s.selected);
                 self.s.selected = self.s.selected.saturating_sub(1);
             }
@@ -565,14 +566,14 @@ impl RestClient {
         }
 
         ui.add_space(8.0);
-        egui::CollapsingHeader::new(RichText::new("Variablen").strong()).default_open(true).show(ui, |ui| {
-            ui.label(RichText::new("In URL, Parametern, Headern und Body als {{name}} nutzbar.").small().weak());
+        egui::CollapsingHeader::new(RichText::new(tr("Variables")).strong()).id_salt("rest_vars").default_open(true).show(ui, |ui| {
+            ui.label(RichText::new(tr("Usable as {{name}} in the URL, params, headers and body.")).small().weak());
             let mut remove = None;
             for (i, v) in self.s.vars.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut v.on, "");
-                    ui.add(egui::TextEdit::singleline(&mut v.key).hint_text("name").desired_width(70.0));
-                    ui.add(egui::TextEdit::singleline(&mut v.value).hint_text("Wert").desired_width(118.0));
+                    ui.add(egui::TextEdit::singleline(&mut v.key).hint_text(tr("name")).desired_width(70.0));
+                    ui.add(egui::TextEdit::singleline(&mut v.value).hint_text(tr("Value")).desired_width(118.0));
                     if ui.small_button("✖").clicked() {
                         remove = Some(i);
                     }
@@ -581,24 +582,24 @@ impl RestClient {
             if let Some(i) = remove {
                 self.s.vars.remove(i);
             }
-            if ui.small_button("➕ Variable").clicked() {
+            if ui.small_button(tr("➕ Variable")).clicked() {
                 self.s.vars.push(Kv::default());
             }
         });
 
-        egui::CollapsingHeader::new(RichText::new("Einstellungen").strong()).show(ui, |ui| {
+        egui::CollapsingHeader::new(RichText::new(tr("Settings")).strong()).id_salt("rest_settings").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Zeitlimit");
+                ui.label(tr("Request timeout"));
                 ui.add(egui::DragValue::new(&mut self.s.timeout_s).range(1..=600).suffix(" s"));
             });
-            ui.checkbox(&mut self.s.follow_redirects, "Weiterleitungen folgen");
-            ui.checkbox(&mut self.s.insecure, "Zertifikate nicht prüfen")
-                .on_hover_text("Für Geräte mit selbst signierten Zertifikaten. Nur in vertrauenswürdigen Netzen verwenden.");
+            ui.checkbox(&mut self.s.follow_redirects, tr("Follow redirects"));
+            ui.checkbox(&mut self.s.insecure, tr("Don't verify certificates"))
+                .on_hover_text(tr("For devices with self-signed certificates. Only use on trusted networks."));
         });
 
-        egui::CollapsingHeader::new(RichText::new(format!("Verlauf ({})", self.history.len())).strong()).show(ui, |ui| {
+        egui::CollapsingHeader::new(RichText::new(trf("History ({})", &[&self.history.len()])).strong()).id_salt("rest_history").show(ui, |ui| {
             if self.history.is_empty() {
-                ui.label(RichText::new("Noch nichts gesendet.").weak().italics());
+                ui.label(RichText::new(tr("Nothing sent yet.")).weak().italics());
             }
             let mut load = None;
             for (i, h) in self.history.iter().enumerate() {
@@ -611,7 +612,7 @@ impl RestClient {
                         .frame(false)
                         .wrap(),
                     )
-                    .on_hover_text("Klick: Methode und URL in eine neue Anfrage übernehmen");
+                    .on_hover_text(tr("Click: use method and URL for a new request"));
                 ui.painter().vline(r.rect.left() - 4.0, r.rect.y_range(), egui::Stroke::new(2.0, col));
                 if r.clicked() {
                     load = Some(i);
@@ -637,7 +638,7 @@ impl RestClient {
         {
             let r = self.current();
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Name").weak());
+                ui.label(RichText::new(tr("Name")).weak());
                 ui.add(egui::TextEdit::singleline(&mut r.name).desired_width(260.0));
             });
             ui.horizontal(|ui| {
@@ -653,25 +654,25 @@ impl RestClient {
                 let te = ui.add(
                     egui::TextEdit::singleline(&mut r.url)
                         .font(egui::TextStyle::Monospace)
-                        .hint_text("https://gerät.local/api/status  oder  {{baseUrl}}/pfad")
+                        .hint_text(tr("https://device.local/api/status  or  {{baseUrl}}/path"))
                         .desired_width(w),
                 );
                 if te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     send = true;
                 }
                 let (label, fill) = if pending {
-                    ("⏳ Läuft …", Color32::from_rgb(220, 150, 0))
+                    (tr("⏳ Running …"), Color32::from_rgb(220, 150, 0))
                 } else {
-                    ("▶ Senden", Color32::from_rgb(0, 130, 160))
+                    (tr("▶ Send"), Color32::from_rgb(0, 130, 160))
                 };
                 if ui
                     .add_enabled(!pending, egui::Button::new(RichText::new(label).color(Color32::WHITE).strong()).fill(fill))
-                    .on_hover_text("Anfrage senden (Enter im URL-Feld oder Strg+Enter)")
+                    .on_hover_text(tr("Send request (Enter in the URL field or Ctrl+Enter)"))
                     .clicked()
                 {
                     send = true;
                 }
-                if ui.button("cURL").on_hover_text("Anfrage als cURL-Befehl kopieren").clicked() {
+                if ui.button("cURL").on_hover_text(tr("Copy request as cURL command")).clicked() {
                     copy_curl = true;
                 }
             });
@@ -686,7 +687,7 @@ impl RestClient {
             match self.curl() {
                 Ok(c) => {
                     ctx.copy_text(c);
-                    self.note = Some("cURL-Befehl in die Zwischenablage kopiert".into());
+                    self.note = Some(tr("cURL command copied to clipboard").into());
                 }
                 Err(e) => self.note = Some(e),
             }
@@ -703,48 +704,48 @@ impl RestClient {
             (r.params.iter().filter(|p| p.on).count(), r.headers.iter().filter(|p| p.on).count())
         };
         ui.horizontal(|ui| {
-            ui.selectable_value(tab, ReqTab::Params, format!("Parameter ({np})"));
-            ui.selectable_value(tab, ReqTab::Headers, format!("Header ({nh})"));
-            ui.selectable_value(tab, ReqTab::Body, "Body");
-            ui.selectable_value(tab, ReqTab::Auth, "Anmeldung");
+            ui.selectable_value(tab, ReqTab::Params, trf("Params ({})", &[&np]));
+            ui.selectable_value(tab, ReqTab::Headers, trf("Headers ({})", &[&nh]));
+            ui.selectable_value(tab, ReqTab::Body, tr("Body"));
+            ui.selectable_value(tab, ReqTab::Auth, tr("Auth"));
         });
         ui.separator();
         let tab = self.req_tab;
         let r = self.current();
         egui::ScrollArea::vertical().id_salt("rest_req_scroll").auto_shrink([false, false]).show(ui, |ui| match tab {
             ReqTab::Params => {
-                ui.label(RichText::new("Werden als ?name=wert an die URL gehängt (automatisch kodiert).").small().weak());
-                kv_table(ui, "rest_params", &mut r.params, "Name", "Wert");
+                ui.label(RichText::new(tr("Appended to the URL as ?name=value (encoded automatically).")).small().weak());
+                kv_table(ui, "rest_params", &mut r.params, tr("Name"), tr("Value"));
             }
             ReqTab::Headers => {
-                kv_table(ui, "rest_headers", &mut r.headers, "Header, z. B. Accept", "Wert");
+                kv_table(ui, "rest_headers", &mut r.headers, tr("Header, e.g. Accept"), tr("Value"));
             }
             ReqTab::Body => {
                 ui.horizontal(|ui| {
-                    for (k, l) in [(BodyKind::None, "Kein"), (BodyKind::Json, "JSON"), (BodyKind::Text, "Text"), (BodyKind::Form, "Formular")] {
+                    for (k, l) in [(BodyKind::None, tr("No body")), (BodyKind::Json, tr("JSON")), (BodyKind::Text, tr("Text")), (BodyKind::Form, tr("Form"))] {
                         ui.radio_value(&mut r.body_kind, k, l);
                     }
                     if r.body_kind == BodyKind::Json {
                         ui.separator();
-                        if ui.button("Formatieren").on_hover_text("JSON einrücken").clicked() {
+                        if ui.button(tr("Format")).on_hover_text(tr("Indent JSON")).clicked() {
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&r.body) {
                                 r.body = serde_json::to_string_pretty(&v).unwrap_or_default();
                             }
                         }
                         if !r.body.trim().is_empty() && !r.body.contains("{{") {
                             match serde_json::from_str::<serde_json::Value>(&r.body) {
-                                Ok(_) => ui.label(RichText::new("✔ gültiges JSON").small().color(Color32::from_rgb(30, 150, 70))),
+                                Ok(_) => ui.label(RichText::new(tr("✔ valid JSON")).small().color(Color32::from_rgb(30, 150, 70))),
                                 Err(e) => ui.label(RichText::new(format!("⚠ {e}")).small().color(Color32::from_rgb(200, 110, 0))),
                             };
                         }
                     }
                 });
                 if matches!(r.method.as_str(), "GET" | "HEAD") && r.body_kind != BodyKind::None {
-                    ui.label(RichText::new("Hinweis: Bei GET und HEAD wird kein Body gesendet.").small().weak());
+                    ui.label(RichText::new(tr("Note: GET and HEAD requests send no body.")).small().weak());
                 }
                 match r.body_kind {
                     BodyKind::None => {
-                        ui.label(RichText::new("Diese Anfrage hat keinen Body.").weak().italics());
+                        ui.label(RichText::new(tr("This request has no body.")).weak().italics());
                     }
                     BodyKind::Json | BodyKind::Text => {
                         ui.add(
@@ -754,17 +755,17 @@ impl RestClient {
                                 .desired_width(f32::INFINITY),
                         );
                     }
-                    BodyKind::Form => kv_table(ui, "rest_form", &mut r.form, "Feld", "Wert"),
+                    BodyKind::Form => kv_table(ui, "rest_form", &mut r.form, tr("Field"), tr("Value")),
                 }
             }
             ReqTab::Auth => {
                 ui.horizontal(|ui| {
-                    for (k, l) in [(AuthKind::None, "Keine"), (AuthKind::Bearer, "Bearer-Token"), (AuthKind::Basic, "Benutzer + Passwort"), (AuthKind::ApiKey, "API-Schlüssel")] {
+                    for (k, l) in [(AuthKind::None, tr("No auth")), (AuthKind::Bearer, tr("Bearer token")), (AuthKind::Basic, tr("User + password")), (AuthKind::ApiKey, tr("API key"))] {
                         ui.radio_value(&mut r.auth, k, l);
                     }
                 });
                 ui.add_space(4.0);
-                let field = |ui: &mut Ui, label: &str, value: &mut String, secret: bool, w: f32| {
+                let field = |ui: &mut Ui, label: &'static str, value: &mut String, secret: bool, w: f32| {
                     ui.horizontal(|ui| {
                         ui.add_sized([100.0, 20.0], egui::Label::new(label));
                         ui.add(egui::TextEdit::singleline(value).password(secret).desired_width(w));
@@ -772,26 +773,26 @@ impl RestClient {
                 };
                 match r.auth {
                     AuthKind::None => {
-                        ui.label(RichText::new("Keine Anmeldung.").weak().italics());
+                        ui.label(RichText::new(tr("No authentication.")).weak().italics());
                     }
-                    AuthKind::Bearer => field(ui, "Token", &mut r.token, true, 380.0),
+                    AuthKind::Bearer => field(ui, tr("Token"), &mut r.token, true, 380.0),
                     AuthKind::Basic => {
-                        field(ui, "Benutzer", &mut r.user, false, 240.0);
-                        field(ui, "Passwort", &mut r.password, true, 240.0);
+                        field(ui, tr("User"), &mut r.user, false, 240.0);
+                        field(ui, tr("Password"), &mut r.password, true, 240.0);
                     }
                     AuthKind::ApiKey => {
-                        field(ui, "Header-Name", &mut r.api_key_name, false, 240.0);
-                        field(ui, "Schlüssel", &mut r.api_key_value, true, 380.0);
+                        field(ui, tr("Header name"), &mut r.api_key_name, false, 240.0);
+                        field(ui, tr("Key"), &mut r.api_key_value, true, 380.0);
                     }
                 }
-                ui.label(RichText::new("Tipp: Geheimnisse als Variable ablegen und hier {{name}} eintragen.").small().weak());
+                ui.label(RichText::new(tr("Tip: store secrets as a variable and enter {{name}} here.")).small().weak());
             }
         });
     }
 
     fn response_ui(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Antwort").strong().size(14.0));
+            ui.label(RichText::new(tr("Response")).strong().size(14.0));
             if let Some((_, started, _, _)) = &self.pending {
                 ui.spinner();
                 ui.label(format!("{:.1} s", started.elapsed().as_secs_f32()));
@@ -811,29 +812,29 @@ impl RestClient {
                     ui.label(RichText::new(human_size(r.body.len())).weak());
                 }
                 Some(Err(_)) => {
-                    ui.label(RichText::new("Fehler").color(Color32::from_rgb(200, 50, 50)).strong());
+                    ui.label(RichText::new(tr("Error")).color(Color32::from_rgb(200, 50, 50)).strong());
                 }
                 None => {}
             }
         });
         let Some(res) = &self.response else {
-            ui.label(RichText::new("Noch keine Antwort. URL eingeben und „Senden“ klicken.").weak().italics());
+            ui.label(RichText::new(tr("No response yet. Enter a URL and click “Send”.")).weak().italics());
             return;
         };
         let nh = res.as_ref().map(|r| r.headers.len()).unwrap_or(0);
         let mut rebuild = false;
         let mut save = false;
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.resp_tab, RespTab::Body, "Body");
-            ui.selectable_value(&mut self.resp_tab, RespTab::Headers, format!("Header ({nh})"));
+            ui.selectable_value(&mut self.resp_tab, RespTab::Body, tr("Body"));
+            ui.selectable_value(&mut self.resp_tab, RespTab::Headers, trf("Headers ({})", &[&nh]));
             ui.separator();
-            if ui.checkbox(&mut self.pretty, "JSON formatieren").changed() {
+            if ui.checkbox(&mut self.pretty, tr("Format JSON")).changed() {
                 rebuild = true;
             }
-            if ui.button("📋 Kopieren").clicked() {
+            if ui.button(tr("📋 Copy")).clicked() {
                 ui.ctx().copy_text(self.resp_view.clone());
             }
-            if ui.button("💾 Speichern").clicked() {
+            if ui.button(tr("💾 Save")).clicked() {
                 save = true;
             }
         });
@@ -842,9 +843,9 @@ impl RestClient {
         }
         if save {
             if let Some(Ok(r)) = &self.response {
-                if let Some(p) = rfd::FileDialog::new().set_file_name("antwort.txt").save_file() {
+                if let Some(p) = rfd::FileDialog::new().set_file_name(tr("response.txt")).save_file() {
                     if let Err(e) = std::fs::write(&p, &r.body) {
-                        self.note = Some(format!("Speichern fehlgeschlagen: {e}"));
+                        self.note = Some(trf("Save failed: {}", &[&e]));
                     }
                 }
             }

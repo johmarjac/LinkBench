@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "note": "The original program was not available to decompile (it is no longer at the target path). These are the defaults LinkBench uses, chosen in earlier rounds from common practice, not read from the original.",
+  "values": [
+    {"name": "serial baud rate", "group": "serial", "value": 9600, "unit": "baud", "estimated": true},
+    {"name": "serial data bits", "group": "serial", "value": 8, "estimated": true},
+    {"name": "serial parity", "group": "serial", "value": "none", "estimated": true},
+    {"name": "serial stop bits", "group": "serial", "value": 1, "estimated": true},
+    {"name": "TCP client port", "group": "tcp", "value": 23, "estimated": true},
+    {"name": "TCP server port", "group": "tcp", "value": 2000, "estimated": true},
+    {"name": "UDP local and remote port", "group": "udp", "value": 2001, "estimated": true},
+    {"name": "send line repeat interval", "group": "send", "value": 1000, "unit": "ms", "estimated": true},
+    {"name": "terminal history length", "group": "display", "value": 4000, "unit": "entries", "estimated": true},
+    {"name": "escape for a hex byte", "group": "send", "value": "$XX", "estimated": true},
+    {"name": "escape for a decimal byte", "group": "send", "value": "#DDD", "estimated": true},
+    {"name": "Modbus TCP port", "group": "modbus", "value": 502, "estimated": true},
+    {"name": "Modbus unit id", "group": "modbus", "value": 1, "estimated": true},
+    {"name": "Modbus timeout", "group": "modbus", "value": 1000, "unit": "ms", "estimated": true},
+    {"name": "Modbus poll interval", "group": "modbus", "value": 1000, "unit": "ms", "estimated": true},
+    {"name": "Modbus RTU baud rate", "group": "modbus", "value": 19200, "unit": "baud", "estimated": true},
+    {"name": "Modbus RTU parity", "group": "modbus", "value": "even", "estimated": true},
+    {"name": "MQTT broker port", "group": "mqtt", "value": 1883, "estimated": true},
+    {"name": "MQTT keep alive", "group": "mqtt", "value": 30, "unit": "s", "estimated": true},
+    {"name": "MQTT message list length", "group": "mqtt", "value": 5000, "unit": "messages", "estimated": true},
+    {"name": "interface languages", "group": "interface", "value": "English, German", "estimated": true},
+    {"name": "default language", "group": "interface", "value": "computer language, else English", "estimated": true},
+    {"name": "project file extension", "group": "interface", "value": ".linkbench (opens .portwerk too)", "estimated": true}
+  ]
+}

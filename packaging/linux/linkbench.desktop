@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=LinkBench
+GenericName=Serial, TCP, UDP and Modbus terminal
+GenericName[de]=Terminal für Seriell, TCP, UDP und Modbus
+Comment=Serial ports, TCP, UDP, Modbus, MQTT and REST in one window
+Comment[de]=Serielle Schnittstellen, TCP, UDP, Modbus, MQTT und REST in einem Fenster
+Exec=linkbench %f
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;Utility;
+MimeType=application/x-linkbench;
+Keywords=serial;rs232;tcp;udp;terminal;modbus;mqtt;rest;
+StartupWMClass=linkbench

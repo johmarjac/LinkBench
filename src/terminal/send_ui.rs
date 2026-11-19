@@ -5,13 +5,16 @@ use std::time::Instant;
 use eframe::egui::{self, Color32, RichText};
 
 use super::{LineEnd, Seq, SendMode, SendRequest, SendRow, Terminal};
+use crate::i18n::{tr, trf};
 use crate::script;
 
-const ESCAPE_HELP: &str = "Text-Zeilen: $0D = Byte als Hex, #13 = Byte als Dezimalzahl,\n\
-\\r \\n \\t = Steuerzeichen, $$ und ## = das Zeichen selbst.\n\
-HEX-Zeilen: Bytes als Hex, z. B. 01 03 0A FF.\n\
-Enter im Feld sendet die Zeile. Die ASCII-Tabelle (oben) fügt Zeichen\n\
-in die zuletzt angeklickte Zeile ein.";
+fn escape_help() -> &'static str {
+    tr(r#"Text lines: $0D = byte as hex, #13 = byte as decimal number,
+\r \n \t = control characters, $$ and ## = the character itself.
+HEX lines: bytes as hex, e.g. 01 03 0A FF.
+Enter in the field sends the line. The ASCII table (above) inserts characters
+into the line you clicked last."#)
+}
 
 impl Terminal {
     /// Draws the send area. Returns what a click asked to send.
@@ -19,11 +22,11 @@ impl Terminal {
         let mut out = Vec::new();
 
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Senden").strong());
+            ui.label(RichText::new(tr("Send")).strong());
             for (m, label, tip) in [
-                (SendMode::Lines, "✉ Zeilen", "Einzelne Zeilen per Klick oder Timer senden"),
-                (SendMode::Loop, "🔁 Schleife", "Mehrere Zeilen nacheinander mit Pausen senden, beliebig oft"),
-                (SendMode::Script, "📜 Skript", "Ein Skript für komplexere Abläufe und Protokolle"),
+                (SendMode::Lines, tr("✉ Lines"), tr("Send single lines by click or timer")),
+                (SendMode::Loop, tr("🔁 Loop"), tr("Send several lines one after another with pauses, as often as you like")),
+                (SendMode::Script, tr("📜 Script"), tr("A script for more complex sequences and protocols")),
             ] {
                 ui.selectable_value(&mut self.s.mode, m, label).on_hover_text(tip);
             }
@@ -38,10 +41,10 @@ impl Terminal {
                         }
                     })
                     .response
-                    .on_hover_text("Wird an Text-Zeilen automatisch angehängt");
-                ui.label(RichText::new("ℹ Hilfe").weak()).on_hover_text(ESCAPE_HELP);
+                    .on_hover_text(tr("Appended automatically to text lines"));
+                ui.label(RichText::new(tr("ℹ Help")).weak()).on_hover_text(escape_help());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("➕ Zeile").clicked() {
+                    if ui.button(tr("➕ Line")).clicked() {
                         self.s.rows.push(SendRow::default());
                     }
                 });
@@ -55,7 +58,7 @@ impl Terminal {
         }
 
         ui.label(
-            RichText::new(format!("Empfangen: {} Byte   Gesendet: {} Byte", self.rx_bytes, self.tx_bytes))
+            RichText::new(trf("Received: {} bytes   Sent: {} bytes", &[&self.rx_bytes, &self.tx_bytes]))
                 .small()
                 .weak(),
         );
@@ -75,18 +78,18 @@ impl Terminal {
                 let te = ui.add(
                     egui::TextEdit::singleline(&mut row.text)
                         .font(egui::TextStyle::Monospace)
-                        .hint_text(if row.hex { "z. B. 01 02 0A" } else { "Text, z. B. Hallo$0D$0A" })
+                        .hint_text(if row.hex { tr("e.g. 01 02 0A") } else { tr("Text, e.g. Hello$0D$0A") })
                         .desired_width(w),
                 );
                 if te.has_focus() || te.clicked() {
                     self.focus_row = i;
                 }
                 let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                ui.checkbox(&mut row.hex, "HEX").on_hover_text("Eingabe als Hex-Bytes");
-                let send = ui.add_enabled(connected, egui::Button::new("Senden")).clicked() || (enter && connected);
-                ui.checkbox(&mut row.repeat, "alle").on_hover_text("Automatisch wiederholt senden");
+                ui.checkbox(&mut row.hex, "HEX").on_hover_text(tr("Input as hex bytes"));
+                let send = ui.add_enabled(connected, egui::Button::new(tr("Send"))).clicked() || (enter && connected);
+                ui.checkbox(&mut row.repeat, tr("every")).on_hover_text(tr("Send repeatedly and automatically"));
                 ui.add(egui::DragValue::new(&mut row.interval_ms).range(10..=3_600_000).suffix(" ms").speed(10.0));
-                if n > 1 && ui.small_button("✖").on_hover_text("Zeile entfernen").clicked() {
+                if n > 1 && ui.small_button("✖").on_hover_text(tr("Remove line")).clicked() {
                     remove = Some(i);
                 }
                 if send {
@@ -119,22 +122,22 @@ impl Terminal {
             ui.horizontal(|ui| {
                 let is_next = running && current.and_then(|c| seq_rows.get(c)) == Some(&i);
                 ui.label(RichText::new(if is_next { "▶" } else { " " }).color(Color32::from_rgb(30, 160, 70)).monospace());
-                ui.checkbox(&mut row.in_seq, "").on_hover_text("Diese Zeile gehört zur Schleife");
+                ui.checkbox(&mut row.in_seq, "").on_hover_text(tr("This line is part of the loop"));
                 let w = (ui.available_width() - 270.0).max(120.0);
                 let te = ui.add(
                     egui::TextEdit::singleline(&mut row.text)
                         .font(egui::TextStyle::Monospace)
-                        .hint_text(if row.hex { "z. B. 01 02 0A" } else { "Text" })
+                        .hint_text(if row.hex { tr("e.g. 01 02 0A") } else { tr("Text") })
                         .desired_width(w),
                 );
                 if te.has_focus() || te.clicked() {
                     self.focus_row = i;
                 }
                 ui.checkbox(&mut row.hex, "HEX");
-                ui.label("dann");
+                ui.label(tr("then"));
                 ui.add(egui::DragValue::new(&mut row.pause_ms).range(0..=3_600_000).suffix(" ms").speed(10.0))
-                    .on_hover_text("Pause nach dieser Zeile");
-                if n > 1 && ui.small_button("✖").on_hover_text("Zeile entfernen").clicked() {
+                    .on_hover_text(tr("Pause after this line"));
+                if n > 1 && ui.small_button("✖").on_hover_text(tr("Remove line")).clicked() {
                     remove = Some(i);
                 }
             });
@@ -146,13 +149,13 @@ impl Terminal {
             }
         }
         ui.horizontal(|ui| {
-            ui.label("Durchläufe");
+            ui.label(tr("Runs"));
             ui.add(egui::DragValue::new(&mut self.s.seq_loops).range(0..=1_000_000))
-                .on_hover_text("0 = endlos, bis Stopp");
+                .on_hover_text(tr("0 = endless, until Stop"));
             if self.s.seq_loops == 0 {
-                ui.label(RichText::new("(endlos)").weak());
+                ui.label(RichText::new(tr("(endless)")).weak());
             }
-            let label = if running { "⏹ Stopp" } else { "▶ Schleife starten" };
+            let label = if running { tr("⏹ Stop") } else { tr("▶ Run loop") };
             let fill = if running { Color32::from_rgb(200, 70, 60) } else { Color32::from_rgb(0, 130, 160) };
             if ui
                 .add_enabled(
@@ -163,18 +166,18 @@ impl Terminal {
             {
                 if running {
                     self.seq = None;
-                    self.info("Schleife gestoppt");
+                    self.info(tr("Loop stopped"));
                 } else {
                     self.seq = Some(Seq { idx: 0, round: 0, next_at: Instant::now() });
-                    self.info("Schleife gestartet");
+                    self.info(tr("Loop started"));
                 }
             }
             if let Some(s) = &self.seq {
                 let total = if self.s.seq_loops == 0 { "∞".to_string() } else { self.s.seq_loops.to_string() };
-                ui.label(RichText::new(format!("Durchlauf {} / {total}", s.round + 1)).weak());
+                ui.label(RichText::new(trf("Run {} / {}", &[&(s.round + 1), &total])).weak());
             }
             if !connected && !running {
-                ui.label(RichText::new("erst verbinden").weak().italics());
+                ui.label(RichText::new(tr("connect first")).weak().italics());
             }
         });
     }
@@ -182,7 +185,7 @@ impl Terminal {
     fn script_ui(&mut self, ui: &mut egui::Ui) {
         let running = self.script.is_some();
         ui.horizontal(|ui| {
-            let label = if running { "⏹ Stopp" } else { "▶ Skript starten" };
+            let label = if running { tr("⏹ Stop") } else { tr("▶ Run script") };
             let fill = if running { Color32::from_rgb(200, 70, 60) } else { Color32::from_rgb(0, 130, 160) };
             if ui.add(egui::Button::new(RichText::new(label).color(Color32::WHITE).strong()).fill(fill)).clicked() {
                 if let Some(s) = &self.script {
@@ -193,39 +196,39 @@ impl Terminal {
             }
             ui.add_enabled_ui(!running, |ui| {
                 egui::ComboBox::from_id_salt(ui.scope_id().with("examples"))
-                    .selected_text("Beispiel laden …")
+                    .selected_text(tr("Load example …"))
                     .width(170.0)
                     .show_ui(ui, |ui| {
-                        for (name, src) in script::EXAMPLES {
-                            if ui.selectable_label(false, *name).clicked() {
+                        for (name, src) in script::examples() {
+                            if ui.selectable_label(false, name).clicked() {
                                 self.s.script = src.to_string();
                             }
                         }
                     });
-                if ui.button("📂 Öffnen").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("Skript", &["lua", "txt"]).pick_file() {
+                if ui.button(tr("📂 Open")).clicked() {
+                    if let Some(p) = rfd::FileDialog::new().add_filter(tr("Script"), &["lua", "txt"]).pick_file() {
                         match std::fs::read_to_string(&p) {
                             Ok(s) => self.s.script = s,
-                            Err(e) => self.error(format!("Skript nicht lesbar: {e}")),
+                            Err(e) => self.error(trf("Script not readable: {}", &[&e])),
                         }
                     }
                 }
             });
-            if ui.button("💾 Speichern").clicked() {
+            if ui.button(tr("💾 Save")).clicked() {
                 if let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Skript", &["lua", "txt"])
-                    .set_file_name("skript.lua")
+                    .add_filter(tr("Script"), &["lua", "txt"])
+                    .set_file_name(tr("script.lua"))
                     .save_file()
                 {
                     if let Err(e) = std::fs::write(&p, &self.s.script) {
-                        self.error(format!("Skript nicht gespeichert: {e}"));
+                        self.error(trf("Script not saved: {}", &[&e]));
                     }
                 }
             }
-            ui.label(RichText::new("ℹ Befehle").weak()).on_hover_text(RichText::new(script::HELP).monospace());
+            ui.label(RichText::new(tr("ℹ Commands")).weak()).on_hover_text(RichText::new(script::help()).monospace());
             if running {
                 ui.spinner();
-                ui.label(RichText::new("läuft …").color(Color32::from_rgb(30, 160, 70)));
+                ui.label(RichText::new(tr("running …")).color(Color32::from_rgb(30, 160, 70)));
             }
         });
         egui::ScrollArea::vertical().max_height(170.0).id_salt(ui.scope_id().with("script_scroll")).show(ui, |ui| {

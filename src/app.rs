@@ -5,6 +5,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use serde::{Deserialize, Serialize};
 
 use crate::ascii::AsciiTable;
+use crate::i18n::{self, Lang, tr, trf};
 use crate::link;
 use crate::modbus::{ModbusSaved, ModbusSession};
 use crate::modbus_server::{ModbusServerSaved, ModbusServerSession};
@@ -18,7 +19,11 @@ use crate::sessions::{
 use crate::terminal::SendMode;
 use crate::tools::Tools;
 
-pub const APP_NAME: &str = "PortWerk";
+pub const APP_NAME: &str = "LinkBench";
+/// The name the app had before; its saved settings and project files still open.
+pub const OLD_APP_NAME: &str = "PortWerk";
+/// Used by the window system to group the app's windows (Linux/Wayland).
+pub const APP_ID: &str = "linkbench";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -38,16 +43,16 @@ pub enum Tab {
 impl Tab {
     fn label(self) -> &'static str {
         match self {
-            Tab::Serial => "🔌 Seriell",
-            Tab::TcpClient => "🔗 TCP-Client",
-            Tab::TcpServer => "🗄 TCP-Server",
+            Tab::Serial => tr("🔌 Serial"),
+            Tab::TcpClient => tr("🔗 TCP client"),
+            Tab::TcpServer => tr("🗄 TCP server"),
             Tab::Udp => "📡 UDP",
-            Tab::Modbus => "🏭 Modbus-Client",
-            Tab::ModbusServer => "🏭 Modbus-Server",
+            Tab::Modbus => tr("🏭 Modbus client"),
+            Tab::ModbusServer => tr("🏭 Modbus server"),
             Tab::Mqtt => "📶 MQTT",
             Tab::Rest => "🌐 REST",
-            Tab::Tools => "🔧 Werkzeuge",
-            Tab::About => "ℹ Info",
+            Tab::Tools => tr("🔧 Tools"),
+            Tab::About => tr("ℹ About"),
         }
     }
     const ALL: [Tab; 10] = [
@@ -117,11 +122,14 @@ impl Default for Saved {
 struct AppState {
     project: Saved,
     project_path: Option<PathBuf>,
+    /// The language the person picked; the computer's language until then.
+    lang: Option<Lang>,
 }
 
-pub struct PortWerkApp {
+pub struct LinkBenchApp {
     tab: Tab,
     dark: bool,
+    lang: Option<Lang>,
     shared: Shared,
     serial: Group<SerialSession>,
     tcpc: Group<TcpClientSession>,
@@ -142,17 +150,21 @@ pub struct PortWerkApp {
     shot_requested: bool,
 }
 
-impl PortWerkApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<PathBuf>, open: Option<PathBuf>) -> Self {
+impl LinkBenchApp {
+    pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<PathBuf>, open: Option<PathBuf>, lang: Option<Lang>) -> Self {
         let state: AppState = if shot.is_some() {
             AppState::default()
         } else {
             cc.storage.and_then(|s| eframe::get_value(s, eframe::APP_KEY)).unwrap_or_default()
         };
+        // --lang wins, then the saved choice, then the computer's language
+        let lang = lang.or(state.lang);
+        i18n::set(lang.unwrap_or_else(Lang::system));
         let ports = link::list_serial_ports();
         let mut app = Self {
             tab: Tab::Serial,
             dark: state.project.dark,
+            lang,
             shared: Shared { ports },
             serial: Group::new(Vec::new(), 0),
             tcpc: Group::new(Vec::new(), 0),
@@ -241,14 +253,17 @@ impl PortWerkApp {
                 s.dark = self.dark;
                 self.apply(s);
                 self.project_path = Some(path.to_path_buf());
-                self.notify(format!("Projekt geladen: {}", project::display_name(path)), true);
+                self.notify(trf("Project loaded: {}", &[&project::display_name(path)]), true);
             }
             Err(e) => self.notify(e, false),
         }
     }
 
     fn open_dialog(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter("PortWerk-Projekt", &[project::EXT]).pick_file() {
+        if let Some(p) = rfd::FileDialog::new()
+            .add_filter(trf("{} project", &[&APP_NAME]), &[project::EXT, project::OLD_EXT])
+            .pick_file()
+        {
             self.open_project(&p);
         }
     }
@@ -257,15 +272,18 @@ impl PortWerkApp {
         let path = match (&self.project_path, ask) {
             (Some(p), false) => Some(p.clone()),
             _ => rfd::FileDialog::new()
-                .add_filter("PortWerk-Projekt", &[project::EXT])
-                .set_file_name(format!("projekt.{}", project::EXT))
+                .add_filter(trf("{} project", &[&APP_NAME]), &[project::EXT])
+                .set_file_name(format!("{}.{}", tr("project"), project::EXT))
                 .save_file()
-                .map(|p| if p.extension().is_none() { p.with_extension(project::EXT) } else { p }),
+                .map(|p| {
+                    let old = p.extension().is_none_or(|e| e.eq_ignore_ascii_case(project::OLD_EXT));
+                    if old { p.with_extension(project::EXT) } else { p }
+                }),
         };
         let Some(path) = path else { return };
         match project::save(&path, &self.snapshot()) {
             Ok(()) => {
-                self.notify(format!("Gespeichert: {}", project::display_name(&path)), true);
+                self.notify(trf("Saved: {}", &[&project::display_name(&path)]), true);
                 self.project_path = Some(path);
             }
             Err(e) => self.notify(e, false),
@@ -276,30 +294,30 @@ impl PortWerkApp {
         let dark = self.dark;
         self.apply(Saved { dark, ..Saved::default() });
         self.project_path = None;
-        self.notify("Neues Projekt", true);
+        self.notify(tr("New project"), true);
     }
 
     fn project_menu(&mut self, ui: &mut Ui) {
-        ui.menu_button("📁 Projekt", |ui| {
-            if ui.button("🗋 Neu").clicked() {
+        ui.menu_button(tr("📁 Project"), |ui| {
+            if ui.button(tr("🗋 New")).clicked() {
                 self.new_project();
                 ui.close();
             }
-            if ui.add(egui::Button::new("📂 Öffnen …").shortcut_text("Strg+O")).clicked() {
+            if ui.add(egui::Button::new(tr("📂 Open …")).shortcut_text(tr("Ctrl+O"))).clicked() {
                 ui.close();
                 self.open_dialog();
             }
-            if ui.add(egui::Button::new("💾 Speichern").shortcut_text("Strg+S")).clicked() {
+            if ui.add(egui::Button::new(tr("💾 Save")).shortcut_text(tr("Ctrl+S"))).clicked() {
                 ui.close();
                 self.save_project(false);
             }
-            if ui.button("💾 Speichern unter …").clicked() {
+            if ui.button(tr("💾 Save as …")).clicked() {
                 ui.close();
                 self.save_project(true);
             }
             ui.separator();
             ui.label(
-                RichText::new("Ein Projekt enthält alle Sitzungen, Sendezeilen,\nSkripte, Modbus- und REST-Einstellungen.")
+                RichText::new(tr("A project holds all sessions, send lines,\nscripts and the Modbus, MQTT and REST settings."))
                     .small()
                     .weak(),
             );
@@ -307,8 +325,8 @@ impl PortWerkApp {
             {
                 ui.separator();
                 if ui
-                    .button(format!("📎 .{}-Dateien mit PortWerk öffnen", project::EXT))
-                    .on_hover_text("Dateiendung für Ihr Benutzerkonto registrieren (für die portable Version; der Installer erledigt das selbst)")
+                    .button(trf("📎 Open .{} files with {}", &[&project::EXT, &APP_NAME]))
+                    .on_hover_text(tr("Register the file extension for your user account (for the portable version; the installer does this itself)"))
                     .clicked()
                 {
                     ui.close();
@@ -352,6 +370,33 @@ impl PortWerkApp {
         self.ascii.open |= ascii;
     }
 
+    /// 🌐 menu in the top bar: pick the interface language (remembered between starts).
+    fn language_menu(&mut self, ui: &mut Ui) {
+        let now = i18n::current();
+        ui.menu_button(format!("🌐 {}", now.code().to_uppercase()), |ui| {
+            for l in Lang::ALL {
+                if ui.radio(now == l, l.native_name()).clicked() {
+                    i18n::set(l);
+                    self.lang = Some(l);
+                    ui.close();
+                }
+            }
+            ui.separator();
+            let auto = self.lang.is_none();
+            if ui
+                .radio(auto, tr("Like the computer"))
+                .on_hover_text(tr("Use the language of the operating system"))
+                .clicked()
+            {
+                self.lang = None;
+                i18n::set(Lang::system());
+                ui.close();
+            }
+        })
+        .response
+        .on_hover_text(tr("Language"));
+    }
+
     fn apply_theme(&self, ctx: &egui::Context) {
         let mut v = if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
         let accent = Color32::from_rgb(0, 120, 150);
@@ -383,27 +428,28 @@ impl PortWerkApp {
         egui::CentralPanel::default().frame(egui::Frame::central_panel(ui.style()).inner_margin(24.0)).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading(RichText::new(format!("{APP_NAME} {APP_VERSION}")).size(26.0).strong());
-                ui.label("Werkzeug für Entwickler: serielle Schnittstellen, TCP, UDP, Modbus und REST in einem Fenster.");
+                ui.label(tr("A tool for developers: serial ports, TCP, UDP, Modbus, MQTT and REST in one window."));
                 ui.add_space(12.0);
-                section(ui, "Was es kann");
+                section(ui, tr("What it can do"));
                 for t in [
-                    "Mehrere Sitzungen je Verbindungsart als Reiter: öffnen, benennen (Doppelklick), duplizieren, schließen – alle laufen gleichzeitig",
-                    "Serielle Ports öffnen (Baudrate, Datenbits, Parität, Stoppbits, Handshake), DTR/RTS/BREAK schalten, CTS/DSR/RI/CD beobachten",
-                    "Als TCP-Client mit Geräten oder Diensten verbinden",
-                    "Als TCP-Server mehrere Clients annehmen, an alle oder einzelne senden, Clients trennen",
-                    "UDP-Pakete senden und empfangen, auch Broadcast und Antwort an den letzten Absender",
-                    "Modbus-Client RTU und TCP: Coils, Eingänge und Register lesen und schreiben, zyklisch abfragen, Werte als 16/32 Bit, Float oder Text, Datenverkehr als Hex",
-                    "Modbus-TCP-Server (Geräte-Simulator): Werte in einer Tabelle bearbeiten, mehrere Clients gleichzeitig, Werte automatisch hochzählen oder zufällig ändern",
-                    "MQTT-Client (3.1.1, auch TLS): mehrere Broker gleichzeitig, Abos mit + und #, Nachrichtenliste als Text/Hex/JSON, Themenübersicht, Veröffentlichen mit QoS/Retain und Wiederholung",
-                    "REST-Client: GET/POST/PUT/PATCH/DELETE, Parameter, Header, JSON/Text/Formular-Body, Anmeldung, Variablen wie {{baseUrl}}, Verlauf, cURL-Export",
-                    "Projektdateien (.portwerk): alle Sitzungen und Einstellungen speichern und an Kollegen weitergeben – Doppelklick öffnet PortWerk",
-                    "Anzeige als Text, Hex, Hex + Text oder Dezimal, mit Uhrzeit und Steuerzeichen",
-                    "Beliebig viele Sendezeilen, als Text mit $XX-/#DDD-Escapes oder als Hex, mit automatischer Wiederholung",
-                    "Schleife: mehrere Zeilen nacheinander mit eigenen Pausen senden, x-mal oder endlos",
-                    "Skripte (Lua) für Protokolle: senden, warten, auf Antworten reagieren, Prüfsummen, HTTP-Anfragen",
-                    "ASCII-Tabelle (Dezimal, Hex, Binär, Zeichen) – ein Klick fügt das Zeichen in die Sendezeile ein",
-                    "Echo-Modus, Pause, Fensterinhalt speichern und laufende Mitschrift in eine Datei",
-                    "Werkzeuge: Umrechner Text/Hex/Dezimal/Binär, Prüfsummen (Summe, XOR, CRC-8, CRC-16 Modbus/CCITT, CRC-32), Zahlenumrechner",
+                    tr("Several sessions per connection type as tabs: open, rename (double-click), duplicate, close – all run at the same time"),
+                    tr("Open serial ports (baud rate, data bits, parity, stop bits, handshake), switch DTR/RTS/BREAK, watch CTS/DSR/RI/CD"),
+                    tr("Connect to devices or services as a TCP client"),
+                    tr("Accept several clients as a TCP server, send to all or to one, disconnect clients"),
+                    tr("Send and receive UDP packets, also broadcast and reply to the last sender"),
+                    tr("Modbus client RTU and TCP: read and write coils, inputs and registers, poll cyclically, values as 16/32 bit, float or text, traffic as hex"),
+                    tr("Modbus TCP server (device simulator): edit values in a table, several clients at once, count values up or change them randomly"),
+                    tr("MQTT client (3.1.1, also TLS): several brokers at once, subscriptions with + and #, message list as text/hex/JSON, topic overview, publish with QoS/retain and repeat"),
+                    tr("REST client: GET/POST/PUT/PATCH/DELETE, parameters, headers, JSON/text/form body, authentication, variables like {{baseUrl}}, history, cURL export"),
+                    tr("Project files (.linkbench): save all sessions and settings and pass them on to colleagues – a double-click opens LinkBench"),
+                    tr("Display as text, hex, hex + text or decimal, with time of day and control characters"),
+                    tr("Any number of send lines, as text with $XX/#DDD escapes or as hex, with automatic repeat"),
+                    tr("Loop: send several lines one after another with their own pauses, x times or endlessly"),
+                    tr("Scripts (Lua) for protocols: send, wait, react to answers, checksums, HTTP requests"),
+                    tr("ASCII table (decimal, hex, binary, character) – one click inserts the character into the send line"),
+                    tr("Echo mode, pause, save the window content and a running log to a file"),
+                    tr("Tools: converter text/hex/decimal/binary, checksums (sum, XOR, CRC-8, CRC-16 Modbus/CCITT, CRC-32), number converter"),
+                    tr("Interface in English and German (🌐 in the top bar)"),
                 ] {
                     ui.horizontal_wrapped(|ui| {
                         ui.label("•");
@@ -411,13 +457,13 @@ impl PortWerkApp {
                     });
                 }
                 ui.add_space(8.0);
-                section(ui, "Escape-Zeichen in Text-Sendezeilen");
+                section(ui, tr("Escape characters in text send lines"));
                 egui::Grid::new("esc").num_columns(2).striped(true).show(ui, |ui| {
                     for (a, b) in [
-                        ("$0D", "ein Byte als Hex (hier 13 = CR)"),
-                        ("#013", "ein Byte als Dezimalzahl"),
-                        ("\\r \\n \\t \\0", "CR, LF, Tab, Null"),
-                        ("$$  ##", "das Zeichen $ bzw. # selbst"),
+                        ("$0D", tr("one byte as hex (here 13 = CR)")),
+                        ("#013", tr("one byte as a decimal number")),
+                        ("\\r \\n \\t \\0", tr("CR, LF, tab, null")),
+                        ("$$  ##", tr("the character $ or # itself")),
                     ] {
                         ui.monospace(a);
                         ui.label(b);
@@ -429,7 +475,7 @@ impl PortWerkApp {
     }
 }
 
-impl eframe::App for PortWerkApp {
+impl eframe::App for LinkBenchApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.serial.pump(&ctx);
@@ -450,7 +496,7 @@ impl eframe::App for PortWerkApp {
         // a project file dropped onto the window
         let dropped: Option<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).find(|p| !p.as_os_str().is_empty()));
         if let Some(p) = dropped {
-            if p.extension().is_some_and(|e| e.eq_ignore_ascii_case(project::EXT)) {
+            if p.extension().is_some_and(|e| e.eq_ignore_ascii_case(project::EXT) || e.eq_ignore_ascii_case(project::OLD_EXT)) {
                 self.open_project(&p);
             }
         }
@@ -493,12 +539,13 @@ impl eframe::App for PortWerkApp {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let icon = if self.dark { "☀" } else { "🌙" };
-                        if ui.button(icon).on_hover_text("Hell / Dunkel").clicked() {
+                        if ui.button(icon).on_hover_text(tr("Light / dark")).clicked() {
                             self.dark = !self.dark;
                             self.apply_theme(&ctx);
                         }
                         ui.toggle_value(&mut self.ascii.open, "🔤 ASCII")
-                            .on_hover_text("ASCII-Tabelle mit Dezimal-, Hex- und Zeichenwerten einblenden");
+                            .on_hover_text(tr("Show the ASCII table with decimal, hex and character values"));
+                        self.language_menu(ui);
                     });
                 });
             });
@@ -508,12 +555,12 @@ impl eframe::App for PortWerkApp {
             .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(10, 4)))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    status_group(ui, "Seriell", &self.serial);
-                    status_group(ui, "TCP-Client", &self.tcpc);
-                    status_group(ui, "TCP-Server", &self.tcps);
+                    status_group(ui, tr("Serial"), &self.serial);
+                    status_group(ui, tr("TCP client"), &self.tcpc);
+                    status_group(ui, tr("TCP server"), &self.tcps);
                     status_group(ui, "UDP", &self.udp);
-                    status_group(ui, "Modbus-Client", &self.modbus);
-                    status_group(ui, "Modbus-Server", &self.mbserver);
+                    status_group(ui, tr("Modbus client"), &self.modbus);
+                    status_group(ui, tr("Modbus server"), &self.mbserver);
                     status_group(ui, "MQTT", &self.mqtt);
                     if let Some((msg, ok, at)) = &self.notice {
                         if at.elapsed() < Duration::from_secs(8) {
@@ -529,11 +576,11 @@ impl eframe::App for PortWerkApp {
 
         let shared = &mut self.shared;
         match self.tab {
-            Tab::Serial => self.serial.ui(ui, "Seriell", shared, |n| SerialSession::new(n, &shared_ports())),
-            Tab::TcpClient => self.tcpc.ui(ui, "Client", shared, TcpClientSession::new),
+            Tab::Serial => self.serial.ui(ui, tr("Serial"), shared, |n| SerialSession::new(n, &shared_ports())),
+            Tab::TcpClient => self.tcpc.ui(ui, tr("Client"), shared, TcpClientSession::new),
             Tab::TcpServer => {
                 let next = self.tcps.items.iter().map(|s| s.port()).max().map_or(2000, |p| p.saturating_add(1));
-                self.tcps.ui(ui, "Server", shared, move |n| TcpServerSession::new(n, next))
+                self.tcps.ui(ui, tr("Server"), shared, move |n| TcpServerSession::new(n, next))
             }
             Tab::Udp => {
                 let next = 2001 + self.udp.items.len() as u16;
@@ -542,7 +589,7 @@ impl eframe::App for PortWerkApp {
             Tab::Modbus => self.modbus.ui(ui, "Modbus", shared, ModbusSession::new),
             Tab::ModbusServer => {
                 let next = self.mbserver.items.iter().map(|s| s.port()).max().map_or(502, |p| p.saturating_add(1));
-                self.mbserver.ui(ui, "Modbus-Server", shared, move |n| ModbusServerSession::new(n, next))
+                self.mbserver.ui(ui, tr("Modbus server"), shared, move |n| ModbusServerSession::new(n, next))
             }
             Tab::Mqtt => self.mqtt.ui(ui, "MQTT", shared, MqttSession::new),
             Tab::Rest => self.rest.ui(ui),
@@ -575,7 +622,7 @@ impl eframe::App for PortWerkApp {
                         Some(buf) => match buf.save(&path) {
                             Ok(()) => 0,
                             Err(e) => {
-                                eprintln!("Screenshot konnte nicht gespeichert werden: {e}");
+                                eprintln!("Screenshot could not be saved: {e}");
                                 1
                             }
                         },
@@ -589,7 +636,7 @@ impl eframe::App for PortWerkApp {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         if self.shot.is_none() {
-            let state = AppState { project: self.snapshot(), project_path: self.project_path.clone() };
+            let state = AppState { project: self.snapshot(), project_path: self.project_path.clone(), lang: self.lang };
             eframe::set_value(storage, eframe::APP_KEY, &state);
         }
     }
