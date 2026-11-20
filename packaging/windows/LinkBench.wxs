@@ -24,15 +24,15 @@
       <Directory Id="INSTALLFOLDER" Name="LinkBench">
         <Component Id="MainExecutable">
           <File Id="LinkBenchExe" Source="$(var.BinPath)" Name="LinkBench.exe" KeyPath="yes" />
-          <!-- *.linkbench project files (and the older *.portwerk ones) open with LinkBench on double click -->
+          <!-- *.linkbench project files open with LinkBench on double click -->
           <ProgId Id="LinkBench.Project" Description="LinkBench project" Icon="LinkBenchExe" IconIndex="0" Advertise="no">
             <Extension Id="linkbench" ContentType="application/x-linkbench">
               <Verb Id="open" Command="Open" TargetFile="LinkBenchExe" Argument="&quot;%1&quot;" />
             </Extension>
-            <Extension Id="portwerk" ContentType="application/x-linkbench">
-              <Verb Id="open" Command="Open" TargetFile="LinkBenchExe" Argument="&quot;%1&quot;" />
-            </Extension>
           </ProgId>
+          <!-- the older *.portwerk files use the same file type (a second Extension with its own
+               "open" verb would write the same shell\open\command key twice) -->
+          <RegistryValue Root="HKCR" Key=".portwerk" Type="string" Value="LinkBench.Project" />
         </Component>
       </Directory>
     </StandardDirectory>
